@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<incidents format="6" by="lint 9.3.0" type="partial_results">
+    <map id="UnsafeIntentLaunch">
+            <map id="unprotected">
+                <entry
+                    name="com.saeed.ikev2vpn.MainActivity"
+                    boolean="true"/>
+            </map>
+    </map>
+    <map id="UnusedResources">
+        <entry
+            name="model"
+            string="drawable[ic_vpn(U)],string[app_name(U)],style[Theme_Ikev2Vpn(U)],xml[data_extraction_rules(U)];;;;"/>
+    </map>
+
+</incidents>

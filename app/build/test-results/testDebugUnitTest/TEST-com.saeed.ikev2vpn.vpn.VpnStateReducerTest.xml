@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.saeed.ikev2vpn.vpn.VpnStateReducerTest" tests="11" skipped="0" failures="0" errors="0" timestamp="2026-08-26T08:21:53.185Z" hostname="S-Mehmandost-PC" time="0.011">
+  <properties/>
+  <testcase name="unconfirmed legacy disconnect timeout becomes unknown" classname="com.saeed.ikev2vpn.vpn.VpnStateReducerTest" time="0.002"/>
+  <testcase name="recoverable platform error remains in retrying state" classname="com.saeed.ikev2vpn.vpn.VpnStateReducerTest" time="0.001"/>
+  <testcase name="API 33 failed state has a useful fallback error" classname="com.saeed.ikev2vpn.vpn.VpnStateReducerTest" time="0.001"/>
+  <testcase name="unconfirmed failure transitions to error without claiming confirmation" classname="com.saeed.ikev2vpn.vpn.VpnStateReducerTest" time="0.001"/>
+  <testcase name="disconnect waits until owned network is lost" classname="com.saeed.ikev2vpn.vpn.VpnStateReducerTest" time="0.0"/>
+  <testcase name="owned VPN network confirms connection" classname="com.saeed.ikev2vpn.vpn.VpnStateReducerTest" time="0.001"/>
+  <testcase name="API 33 platform state is authoritative" classname="com.saeed.ikev2vpn.vpn.VpnStateReducerTest" time="0.0"/>
+  <testcase name="stale API state does not regress a requested transition" classname="com.saeed.ikev2vpn.vpn.VpnStateReducerTest" time="0.002"/>
+  <testcase name="local stop completion remains unconfirmed" classname="com.saeed.ikev2vpn.vpn.VpnStateReducerTest" time="0.0"/>
+  <testcase name="unconfirmed platform timeout requires a stop before retry" classname="com.saeed.ikev2vpn.vpn.VpnStateReducerTest" time="0.0"/>
+  <testcase name="successful start request remains unconfirmed connecting" classname="com.saeed.ikev2vpn.vpn.VpnStateReducerTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

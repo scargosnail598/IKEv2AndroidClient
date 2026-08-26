@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.saeed.ikev2vpn.profile.IkevProfileImporterTest" tests="10" skipped="0" failures="0" errors="0" timestamp="2026-08-26T08:21:51.859Z" hostname="S-Mehmandost-PC" time="0.071">
+  <properties/>
+  <testcase name="rejects fingerprint mismatch" classname="com.saeed.ikev2vpn.profile.IkevProfileImporterTest" time="0.036"/>
+  <testcase name="rejects a valid end entity certificate" classname="com.saeed.ikev2vpn.profile.IkevProfileImporterTest" time="0.005"/>
+  <testcase name="accepts proxy disabled without endpoint fields" classname="com.saeed.ikev2vpn.profile.IkevProfileImporterTest" time="0.004"/>
+  <testcase name="rejects remote ID mismatch and malformed proxy" classname="com.saeed.ikev2vpn.profile.IkevProfileImporterTest" time="0.004"/>
+  <testcase name="rejects corrupted Base64" classname="com.saeed.ikev2vpn.profile.IkevProfileImporterTest" time="0.002"/>
+  <testcase name="imports frozen version one profile with embedded CA and proxy metadata" classname="com.saeed.ikev2vpn.profile.IkevProfileImporterTest" time="0.002"/>
+  <testcase name="bounded reader rejects more than one MiB" classname="com.saeed.ikev2vpn.profile.IkevProfileImporterTest" time="0.004"/>
+  <testcase name="rejects trailing JSON and invalid imported identity fields" classname="com.saeed.ikev2vpn.profile.IkevProfileImporterTest" time="0.003"/>
+  <testcase name="rejects non-integer version and unsupported authentication or mode" classname="com.saeed.ikev2vpn.profile.IkevProfileImporterTest" time="0.003"/>
+  <testcase name="rejects wrong format and future version explicitly" classname="com.saeed.ikev2vpn.profile.IkevProfileImporterTest" time="0.004"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

@@ -1,0 +1,6 @@
+R_DEF: Internal format may change without notice
+local
+drawable ic_vpn
+string app_name
+style Theme.Ikev2Vpn
+xml data_extraction_rules

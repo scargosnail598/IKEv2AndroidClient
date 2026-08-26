@@ -1,0 +1,5 @@
+com.saeed.ikev2vpn
+drawable ic_vpn
+string app_name
+style Theme_Ikev2Vpn
+xml data_extraction_rules
