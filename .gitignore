@@ -1,2 +1,52 @@
-# Project exclude paths
-/app/build/
+# Gradle and Kotlin caches
+.gradle/
+.kotlin/
+/build/
+**/build/
+
+# Local Android SDK configuration
+local.properties
+
+# Android Studio and IntelliJ IDEA
+.idea/
+*.iml
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Packaged artifacts and release staging
+*.apk
+*.aab
+*.ap_
+*.dex
+dist/
+
+# Signing material and local signing configuration
+*.jks
+*.keystore
+*.p12
+*.pfx
+keystore.properties
+signing.properties
+release-signing.properties
+
+# Local environment files
+.env
+.env.*
+!.env.example
+
+# Logs, crash dumps, and temporary files
+*.log
+*.hprof
+hs_err_pid*
+*.tmp
+*.temp
+*.bak
+*.swp
+*~
+
+# Operating-system metadata
+.DS_Store
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
