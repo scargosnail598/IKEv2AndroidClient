@@ -48,9 +48,20 @@ object ProfileValidator {
 
             if (username.isBlank()) {
                 put(ProfileField.USERNAME, "Enter the VPN username.")
+            } else if (
+                username.trim().length > MAX_USERNAME_LENGTH ||
+                username.any { character -> character.isISOControl() }
+            ) {
+                put(
+                    ProfileField.USERNAME,
+                    "Username must contain no control characters and be " +
+                        "$MAX_USERNAME_LENGTH characters or fewer.",
+                )
             }
             if (password.isEmpty()) {
                 put(ProfileField.PASSWORD, "Enter the VPN password.")
+            } else if (password.length > MAX_PASSWORD_LENGTH) {
+                put(ProfileField.PASSWORD, "Password must be $MAX_PASSWORD_LENGTH characters or fewer.")
             }
             if (!hasCertificate) {
                 put(ProfileField.CERTIFICATE, "Import the VPN CA certificate.")
@@ -95,5 +106,7 @@ object ProfileValidator {
     }
 
     const val MAX_PROFILE_NAME_LENGTH = 128
+    const val MAX_USERNAME_LENGTH = 256
+    const val MAX_PASSWORD_LENGTH = 1024
     private val HOST_LABEL = Regex("[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?")
 }

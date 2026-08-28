@@ -10,4 +10,5 @@ enum class ProvisioningStatus {
     DRAFT,
     PENDING_CONSENT,
     PROVISIONED,
+    NEEDS_REPROVISION,
 }

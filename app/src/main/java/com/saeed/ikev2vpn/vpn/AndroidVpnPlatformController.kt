@@ -14,6 +14,7 @@ import android.os.Build
 import android.os.Process
 import androidx.annotation.RequiresApi
 import com.saeed.ikev2vpn.data.VpnProfileConfig
+import com.saeed.ikev2vpn.diagnostics.DiagnosticSanitizer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -393,7 +394,7 @@ class AndroidVpnPlatformController(context: Context) : VpnPlatformController {
                 is IllegalArgumentException -> "Android rejected the IKEv2 VPN profile."
                 else -> userMessage
             },
-            technicalMessage = "${exception.javaClass.name}: ${exception.message.orEmpty()}",
+            technicalMessage = DiagnosticSanitizer.exceptionType(exception),
         )
     }
 

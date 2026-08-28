@@ -12,6 +12,7 @@ import com.saeed.ikev2vpn.data.ProfileRepository
 import com.saeed.ikev2vpn.data.ProvisioningStatus
 import com.saeed.ikev2vpn.data.RepositorySnapshot
 import com.saeed.ikev2vpn.data.VpnProfileConfig
+import com.saeed.ikev2vpn.diagnostics.DiagnosticSanitizer
 import com.saeed.ikev2vpn.profile.IkevProfileImportException
 import com.saeed.ikev2vpn.profile.IkevProfileImporter
 import com.saeed.ikev2vpn.profile.ImportedProxyMetadata
@@ -22,6 +23,8 @@ import com.saeed.ikev2vpn.vpn.ProvisioningAction
 import com.saeed.ikev2vpn.vpn.StateEvidence
 import com.saeed.ikev2vpn.vpn.VpnPlatformController
 import com.saeed.ikev2vpn.vpn.VpnResult
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -29,7 +32,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 sealed interface VpnUiEffect {
     data class RequestVpnConsent(val intent: Intent) : VpnUiEffect
@@ -50,7 +55,6 @@ class VpnViewModel(
     private var draftInitialized = false
     private var initialNavigationComplete = false
     private var setupImportGeneration = 0
-    private var forceUnconfigured = false
     private var consentRequestActive = false
 
     val uiState: StateFlow<VpnUiState> = mutableUiState.asStateFlow()
@@ -63,7 +67,7 @@ class VpnViewModel(
         viewModelScope.launch {
             vpnController.state.collect { platformState ->
                 val configured = latestSnapshot.profile?.status == ProvisioningStatus.PROVISIONED &&
-                    !forceUnconfigured
+                    latestSnapshot.pendingProfile == null
                 mutableUiState.update { current ->
                     if (!configured) {
                         current.copy(
@@ -122,6 +126,8 @@ class VpnViewModel(
                         isBusy = false,
                     )
                 }
+            } catch (exception: CancellationException) {
+                throw exception
             } catch (exception: CertificateLoadException) {
                 if (importGeneration != setupImportGeneration) return@launch
                 showError(exception.message, technicalMessage(exception))
@@ -173,6 +179,8 @@ class VpnViewModel(
                         isBusy = false,
                     )
                 }
+            } catch (exception: CancellationException) {
+                throw exception
             } catch (exception: IkevProfileImportException) {
                 if (importGeneration != setupImportGeneration) return@launch
                 showError(exception.message, technicalMessage(exception))
@@ -222,17 +230,56 @@ class VpnViewModel(
             username = state.username.trim(),
         )
         mutableUiState.update { it.copy(isBusy = true, error = null, technicalError = null) }
-        when (val result = vpnController.provision(config, password, certificate!!.certificate)) {
-            is VpnResult.Failure -> {
-                showError(result.userMessage, result.technicalMessage)
-                recordError(result.userMessage, result.technicalMessage)
-            }
-            is VpnResult.Success -> when (val action = result.value) {
-                ProvisioningAction.Complete -> saveProvisionedProfile(config, certificate)
-                is ProvisioningAction.ConsentRequired -> stageAndRequestConsent(
-                    config,
-                    certificate,
-                    action.intent,
+        viewModelScope.launch {
+            var staged = false
+            var platformProfileReplaced = false
+            try {
+                profileRepository.stageProfile(config, certificate!!)
+                staged = true
+                ensureActive()
+                when (val result = vpnController.provision(config, password, certificate.certificate)) {
+                    is VpnResult.Failure -> {
+                        abortStagedProvision(
+                            result.userMessage,
+                            result.technicalMessage,
+                            platformProfileReplaced = false,
+                        )
+                    }
+                    is VpnResult.Success -> {
+                        platformProfileReplaced = true
+                        when (val action = result.value) {
+                            ProvisioningAction.Complete -> commitStagedProvision()
+                            is ProvisioningAction.ConsentRequired -> {
+                                consentRequestActive = true
+                                mutableUiState.update {
+                                    it.copy(
+                                        configured = false,
+                                        provisioningStatus = ProvisioningStatus.PENDING_CONSENT,
+                                        connectionState = ConnectionState.NOT_CONFIGURED,
+                                        isBusy = false,
+                                    )
+                                }
+                                effectChannel.send(VpnUiEffect.RequestVpnConsent(action.intent))
+                            }
+                        }
+                    }
+                }
+            } catch (exception: CancellationException) {
+                if (staged && !platformProfileReplaced) {
+                    withContext(NonCancellable) {
+                        runCatching { profileRepository.abortStagedProfile(platformProfileReplaced = false) }
+                    }
+                }
+                throw exception
+            } catch (exception: Exception) {
+                abortStagedProvision(
+                    userMessage = if (platformProfileReplaced) {
+                        "The VPN profile could not be saved."
+                    } else {
+                        "The VPN profile could not be staged."
+                    },
+                    technical = technicalMessage(exception),
+                    platformProfileReplaced = platformProfileReplaced,
                 )
             }
         }
@@ -243,14 +290,13 @@ class VpnViewModel(
         viewModelScope.launch {
             val snapshot = try {
                 profileRepository.snapshots.first()
+            } catch (exception: CancellationException) {
+                throw exception
             } catch (exception: Exception) {
-                reconcileUnconfigured(
-                    userMessage = "The VPN consent result could not be saved.",
-                    technical = technicalMessage(exception),
-                )
+                showError("The VPN consent result could not be read.", technicalMessage(exception))
                 return@launch
             }
-            if (!consentRequestActive && snapshot.profile?.status != ProvisioningStatus.PENDING_CONSENT) {
+            if (!consentRequestActive && snapshot.pendingProfile == null) {
                 showError(
                     "The VPN consent request is no longer active. Provision the profile again.",
                     "Ignored an Activity Result without a staged PENDING_CONSENT profile.",
@@ -261,33 +307,21 @@ class VpnViewModel(
 
             if (granted) {
                 try {
-                    profileRepository.setProvisioningStatus(ProvisioningStatus.PROVISIONED)
+                    commitStagedProvision()
+                } catch (exception: CancellationException) {
+                    throw exception
                 } catch (exception: Exception) {
-                    reconcileUnconfigured(
+                    abortStagedProvision(
                         userMessage = "The VPN consent result could not be saved.",
                         technical = technicalMessage(exception),
-                    )
-                    return@launch
-                }
-                runCatching { profileRepository.clearError() }
-                forceUnconfigured = false
-                mutableUiState.update {
-                    it.copy(
-                        configured = true,
-                        provisioningStatus = ProvisioningStatus.PROVISIONED,
-                        screen = AppScreen.MAIN,
-                        connectionState = ConnectionState.DISCONNECTED,
-                        isBusy = false,
-                        error = null,
-                        technicalError = null,
-                        importedProfileInfo = null,
+                        platformProfileReplaced = true,
                     )
                 }
-                vpnController.refreshState()
             } else {
-                reconcileUnconfigured(
+                abortStagedProvision(
                     userMessage = "VPN permission was denied.",
                     technical = "Android VPN consent activity returned a non-success result.",
+                    platformProfileReplaced = true,
                 )
             }
         }
@@ -332,7 +366,21 @@ class VpnViewModel(
             )
             return
         }
-        mutableUiState.update { it.copy(screen = AppScreen.SETUP, fieldErrors = emptyMap()) }
+        latestSnapshot.profile?.let { profile ->
+            selectedCertificate = profile.certificate
+            setupImportGeneration += 1
+            mutableUiState.update {
+                it.copy(
+                    screen = AppScreen.SETUP,
+                    profileName = profile.config.profileName,
+                    serverAddress = profile.config.serverAddress,
+                    username = profile.config.username,
+                    certificateInfo = profile.certificate.info,
+                    importedProfileInfo = null,
+                    fieldErrors = emptyMap(),
+                )
+            }
+        } ?: mutableUiState.update { it.copy(screen = AppScreen.SETUP, fieldErrors = emptyMap()) }
     }
 
     fun showMain() {
@@ -374,21 +422,20 @@ class VpnViewModel(
     private fun applyRepositorySnapshot(snapshot: RepositorySnapshot) {
         latestSnapshot = snapshot
         val profile = snapshot.profile
-        if (profile != null) {
-            selectedCertificate = profile.certificate
-        }
-        val configured = profile?.status == ProvisioningStatus.PROVISIONED && !forceUnconfigured
+        val displayedProfile = snapshot.pendingProfile ?: profile
+        val configured = profile?.status == ProvisioningStatus.PROVISIONED && snapshot.pendingProfile == null
         mutableUiState.update { current ->
-            val draft = if (!draftInitialized && profile != null) {
+            val draft = if (!draftInitialized && displayedProfile != null) {
                 draftInitialized = true
+                selectedCertificate = displayedProfile.certificate
                 current.copy(
-                    profileName = profile.config.profileName,
-                    serverAddress = profile.config.serverAddress,
-                    username = profile.config.username,
-                    certificateInfo = profile.certificate.info,
+                    profileName = displayedProfile.config.profileName,
+                    serverAddress = displayedProfile.config.serverAddress,
+                    username = displayedProfile.config.username,
+                    certificateInfo = displayedProfile.certificate.info,
                 )
             } else {
-                current.copy(certificateInfo = selectedCertificate?.info)
+                current
             }
             val initialScreen = if (!initialNavigationComplete) {
                 initialNavigationComplete = true
@@ -401,7 +448,7 @@ class VpnViewModel(
                 initialized = true,
                 screen = initialScreen,
                 configured = configured,
-                provisioningStatus = profile?.status,
+                provisioningStatus = snapshot.pendingProfile?.status ?: profile?.status,
                 connectionState = if (configured) {
                     platformState.connectionState
                 } else {
@@ -418,56 +465,30 @@ class VpnViewModel(
         }
     }
 
-    private fun saveProvisionedProfile(config: VpnProfileConfig, certificate: LoadedCertificate) {
-        viewModelScope.launch {
-            try {
-                profileRepository.saveProfile(config, certificate, ProvisioningStatus.PROVISIONED)
-                runCatching { profileRepository.clearError() }
-                forceUnconfigured = false
-                mutableUiState.update {
-                    it.copy(
-                        configured = true,
-                        provisioningStatus = ProvisioningStatus.PROVISIONED,
-                        screen = AppScreen.MAIN,
-                        connectionState = ConnectionState.DISCONNECTED,
-                        isBusy = false,
-                        fieldErrors = emptyMap(),
-                        importedProfileInfo = null,
-                    )
-                }
-                vpnController.refreshState()
-            } catch (exception: Exception) {
-                reconcileUnconfigured(
-                    userMessage = "The VPN profile could not be saved.",
-                    technical = technicalMessage(exception),
-                )
-            }
+    private suspend fun commitStagedProvision() {
+        profileRepository.commitStagedProfile()
+        runCatching { profileRepository.clearError() }
+        val committed = profileRepository.snapshots.first().profile
+            ?: throw IllegalStateException("The committed VPN profile is unavailable.")
+        selectedCertificate = committed.certificate
+        mutableUiState.update {
+            it.copy(
+                profileName = committed.config.profileName,
+                serverAddress = committed.config.serverAddress,
+                username = committed.config.username,
+                certificateInfo = committed.certificate.info,
+                configured = true,
+                provisioningStatus = ProvisioningStatus.PROVISIONED,
+                screen = AppScreen.MAIN,
+                connectionState = ConnectionState.DISCONNECTED,
+                isBusy = false,
+                fieldErrors = emptyMap(),
+                error = null,
+                technicalError = null,
+                importedProfileInfo = null,
+            )
         }
-    }
-
-    private fun stageAndRequestConsent(
-        config: VpnProfileConfig,
-        certificate: LoadedCertificate,
-        consentIntent: Intent,
-    ) {
-        viewModelScope.launch {
-            try {
-                profileRepository.saveProfile(config, certificate, ProvisioningStatus.PENDING_CONSENT)
-                mutableUiState.update {
-                    it.copy(
-                        provisioningStatus = ProvisioningStatus.PENDING_CONSENT,
-                        isBusy = false,
-                    )
-                }
-                consentRequestActive = true
-                effectChannel.send(VpnUiEffect.RequestVpnConsent(consentIntent))
-            } catch (exception: Exception) {
-                reconcileUnconfigured(
-                    userMessage = "The VPN profile could not be staged for consent.",
-                    technical = technicalMessage(exception),
-                )
-            }
-        }
+        vpnController.refreshState()
     }
 
     private fun recordError(userMessage: String, technical: String) {
@@ -476,34 +497,56 @@ class VpnViewModel(
         }
     }
 
-    private suspend fun reconcileUnconfigured(userMessage: String, technical: String) {
-        forceUnconfigured = true
+    private suspend fun abortStagedProvision(
+        userMessage: String,
+        technical: String,
+        platformProfileReplaced: Boolean,
+    ) {
         consentRequestActive = false
         val technicalDetails = mutableListOf(technical)
-        when (val deleteResult = vpnController.deleteProvisionedProfile()) {
-            is VpnResult.Failure -> technicalDetails += deleteResult.technicalMessage
-            is VpnResult.Success -> Unit
+        if (platformProfileReplaced) {
+            when (val deleteResult = vpnController.deleteProvisionedProfile()) {
+                is VpnResult.Failure -> technicalDetails += deleteResult.technicalMessage
+                is VpnResult.Success -> Unit
+            }
         }
         try {
-            profileRepository.setProvisioningStatus(ProvisioningStatus.DRAFT)
+            profileRepository.abortStagedProfile(platformProfileReplaced)
+        } catch (exception: CancellationException) {
+            throw exception
         } catch (exception: Exception) {
-            technicalDetails += "Could not mark the stored profile as a draft: ${technicalMessage(exception)}"
+            technicalDetails += "Could not discard the staged profile: ${technicalMessage(exception)}"
         }
-        val combinedTechnical = technicalDetails.joinToString(" | ")
         try {
-            profileRepository.recordError(userMessage, combinedTechnical)
+            profileRepository.recordError(userMessage, technicalDetails.joinToString(" | "))
+        } catch (exception: CancellationException) {
+            throw exception
         } catch (exception: Exception) {
             technicalDetails += "Could not persist diagnostics: ${technicalMessage(exception)}"
         }
+        val restored = runCatching { profileRepository.snapshots.first().profile }.getOrNull()
+        if (restored != null) {
+            selectedCertificate = restored.certificate
+        }
+        val restoredConfigured = restored?.status == ProvisioningStatus.PROVISIONED &&
+            !platformProfileReplaced
         mutableUiState.update {
             it.copy(
                 screen = AppScreen.SETUP,
-                configured = false,
-                provisioningStatus = ProvisioningStatus.DRAFT,
-                connectionState = ConnectionState.NOT_CONFIGURED,
+                profileName = restored?.config?.profileName ?: it.profileName,
+                serverAddress = restored?.config?.serverAddress ?: it.serverAddress,
+                username = restored?.config?.username ?: it.username,
+                certificateInfo = restored?.certificate?.info ?: it.certificateInfo,
+                configured = restoredConfigured,
+                provisioningStatus = restored?.status ?: ProvisioningStatus.DRAFT,
+                connectionState = if (restoredConfigured) ConnectionState.DISCONNECTED else ConnectionState.NOT_CONFIGURED,
                 stateEvidence = StateEvidence.NONE,
                 stateConfirmed = false,
-                stateDetail = "Provision the profile before connecting.",
+                stateDetail = if (restoredConfigured) {
+                    "The previous VPN profile is still provisioned."
+                } else {
+                    "Provision the profile before connecting."
+                },
                 error = userMessage,
                 technicalError = technicalDetails.joinToString(" | "),
                 isBusy = false,
@@ -518,7 +561,7 @@ class VpnViewModel(
     }
 
     private fun technicalMessage(exception: Exception): String {
-        return "${exception.javaClass.name}: ${exception.message.orEmpty()}"
+        return DiagnosticSanitizer.exceptionType(exception)
     }
 
     private fun updateDraft(

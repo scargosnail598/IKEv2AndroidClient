@@ -43,6 +43,14 @@ class CertificateLoader(
             throw CertificateLoadException("The CA certificate is not valid yet.", exception)
         }
 
+        if (certificate.basicConstraints < 0) {
+            throw CertificateLoadException("The selected certificate is not a CA certificate.")
+        }
+        val keyUsage = certificate.keyUsage
+        if (keyUsage != null && (keyUsage.size <= KEY_CERT_SIGN_INDEX || !keyUsage[KEY_CERT_SIGN_INDEX])) {
+            throw CertificateLoadException("The CA certificate is not permitted to sign certificates.")
+        }
+
         val derBytes = try {
             certificate.encoded
         } catch (exception: CertificateException) {
@@ -75,6 +83,7 @@ class CertificateLoader(
 
     companion object {
         const val MAX_CERTIFICATE_BYTES = 256 * 1024
+        private const val KEY_CERT_SIGN_INDEX = 5
 
         fun sha256Fingerprint(derBytes: ByteArray): String {
             return MessageDigest.getInstance("SHA-256")
