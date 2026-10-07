@@ -21,10 +21,11 @@ import java.util.Base64
 
 data class ImportedIkevProfile(
     val config: VpnProfileConfig,
-    val certificate: LoadedCertificate,
+    val certificate: LoadedCertificate?,
     val remoteId: String,
     val serverProfile: String,
     val proxy: ImportedProxyMetadata,
+    val usesPublicCertificateTrust: Boolean = false,
 )
 
 data class ImportedProxyMetadata(
@@ -98,13 +99,13 @@ class IkevProfileParser(
         if (version > SUPPORTED_FORMAT_VERSION) {
             throw IkevProfileImportException(
                 "This profile uses .ikev format version $version.\n" +
-                    "Android client v1.1.0 supports version 1 only.",
+                    "Android client v1.2.0 supports version 1 only.",
             )
         }
         if (version != SUPPORTED_FORMAT_VERSION.toLong()) {
             throw IkevProfileImportException(
                 "Unsupported .ikev format version: $version.\n" +
-                    "Android client v1.1.0 supports version 1 only.",
+                    "Android client v1.2.0 supports version 1 only.",
             )
         }
 
@@ -121,7 +122,7 @@ class IkevProfileParser(
         if (remoteId != server) {
             throw IkevProfileImportException(
                 "This .ikev profile uses a Remote ID different from the server address.\n" +
-                    "Android client v1.1.0 cannot safely represent that profile.",
+                    "Android client v1.2.0 cannot safely represent that profile.",
             )
         }
 
@@ -146,35 +147,44 @@ class IkevProfileParser(
             throw IkevProfileImportException("This .ikev profile uses an unsupported server profile.")
         }
 
-        val ca = requiredObject(profile, "ca_certificate")
-        if (requiredString(ca, "encoding") != "der-base64") {
-            throw IkevProfileImportException(
-                "This .ikev profile uses an unsupported CA certificate encoding.",
-            )
+        val trust = profile.optString("certificate_trust", "private-ca")
+        val usesPublicTrust = trust == "public"
+        if (trust !in setOf("private-ca", "public")) {
+            throw IkevProfileImportException("This .ikev profile uses an unsupported certificate trust mode.")
         }
-        val encodedCertificate = requiredString(ca, "data")
-        val expectedFingerprint = requiredString(ca, "sha256")
-        if (!SHA256_FINGERPRINT_PATTERN.matches(expectedFingerprint)) {
-            throw IkevProfileImportException("The embedded CA certificate fingerprint is invalid.")
-        }
-
-        val certificateBytes = try {
-            Base64.getDecoder().decode(encodedCertificate)
-        } catch (exception: IllegalArgumentException) {
-            throw IkevProfileImportException("The embedded CA certificate is invalid.", exception)
-        }
-        val loadedCertificate = certificateLoader.load(certificateBytes)
-        if (!certificateBytes.contentEquals(loadedCertificate.derBytes)) {
-            throw IkevProfileImportException("The embedded CA certificate is invalid.")
-        }
-        if (!loadedCertificate.info.isCertificateAuthority) {
-            throw IkevProfileImportException("The embedded certificate is not a CA certificate.")
-        }
-        if (!loadedCertificate.info.sha256Fingerprint.equals(expectedFingerprint, ignoreCase = true)) {
-            throw IkevProfileImportException(
-                "CA certificate fingerprint verification failed.\n" +
-                    "The profile may be corrupted or modified.",
-            )
+        val loadedCertificate = if (usesPublicTrust) {
+            if (profile.has("ca_certificate")) {
+                throw IkevProfileImportException("The public-trust profile contains unexpected CA certificate data.")
+            }
+            null
+        } else {
+            val ca = requiredObject(profile, "ca_certificate")
+            if (requiredString(ca, "encoding") != "der-base64") {
+                throw IkevProfileImportException("This .ikev profile uses an unsupported CA certificate encoding.")
+            }
+            val encodedCertificate = requiredString(ca, "data")
+            val expectedFingerprint = requiredString(ca, "sha256")
+            if (!SHA256_FINGERPRINT_PATTERN.matches(expectedFingerprint)) {
+                throw IkevProfileImportException("The embedded CA certificate fingerprint is invalid.")
+            }
+            val certificateBytes = try {
+                Base64.getDecoder().decode(encodedCertificate)
+            } catch (exception: IllegalArgumentException) {
+                throw IkevProfileImportException("The embedded CA certificate is invalid.", exception)
+            }
+            val loaded = certificateLoader.load(certificateBytes)
+            if (!certificateBytes.contentEquals(loaded.derBytes)) {
+                throw IkevProfileImportException("The embedded CA certificate is invalid.")
+            }
+            if (!loaded.info.isCertificateAuthority) {
+                throw IkevProfileImportException("The embedded certificate is not a CA certificate.")
+            }
+            if (!loaded.info.sha256Fingerprint.equals(expectedFingerprint, ignoreCase = true)) {
+                throw IkevProfileImportException(
+                    "CA certificate fingerprint verification failed.\nThe profile may be corrupted or modified.",
+                )
+            }
+            loaded
         }
 
         val proxy = parseProxy(requiredObject(profile, "proxy"))
@@ -185,6 +195,7 @@ class IkevProfileParser(
                 username = username,
             ),
             certificate = loadedCertificate,
+            usesPublicCertificateTrust = usesPublicTrust,
             remoteId = remoteId,
             serverProfile = serverProfile,
             proxy = proxy,

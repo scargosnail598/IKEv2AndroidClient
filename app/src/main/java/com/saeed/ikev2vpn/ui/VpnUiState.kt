@@ -33,6 +33,7 @@ data class VpnUiState(
     val serverAddress: String = "",
     val username: String = "",
     val certificateInfo: CertificateInfo? = null,
+    val usesPublicCertificateTrust: Boolean = false,
     val importedProfileInfo: ImportedProfileUiInfo? = null,
     val sessionId: String? = null,
     val error: String? = null,

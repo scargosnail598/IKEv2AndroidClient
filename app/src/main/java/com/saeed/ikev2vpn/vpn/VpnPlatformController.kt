@@ -12,7 +12,7 @@ interface VpnPlatformController {
     fun provision(
         config: VpnProfileConfig,
         password: String,
-        serverRootCa: X509Certificate,
+        serverRootCa: X509Certificate?,
     ): VpnResult<ProvisioningAction>
 
     fun connect(): VpnResult<String?>

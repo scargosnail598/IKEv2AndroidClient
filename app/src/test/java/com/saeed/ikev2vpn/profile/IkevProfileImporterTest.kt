@@ -26,7 +26,7 @@ class IkevProfileImporterTest {
         assertEquals("secure", imported.serverProfile)
         assertEquals(
             CertificateLoaderTest.EXPECTED_FINGERPRINT,
-            imported.certificate.info.sha256Fingerprint,
+            requireNotNull(imported.certificate).info.sha256Fingerprint,
         )
         assertTrue(imported.proxy.enabled)
         assertEquals("socks5", imported.proxy.type)

@@ -53,7 +53,7 @@ class AndroidVpnPlatformController(context: Context) : VpnPlatformController {
     override fun provision(
         config: VpnProfileConfig,
         password: String,
-        serverRootCa: X509Certificate,
+        serverRootCa: X509Certificate?,
     ): VpnResult<ProvisioningAction> {
         if (!isPlatformSupported()) {
             return VpnResult.Failure(

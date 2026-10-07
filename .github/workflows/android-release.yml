@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - "android-v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing Android release tag to build and publish
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -14,8 +20,30 @@ jobs:
     timeout-minutes: 30
 
     steps:
+      - name: Resolve release tag
+        shell: bash
+        env:
+          DISPATCH_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            TAG="$DISPATCH_TAG"
+          else
+            TAG="$GITHUB_REF_NAME"
+          fi
+
+          if [[ ! "$TAG" =~ ^android-v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid release tag: $TAG"
+            exit 1
+          fi
+
+          echo "RELEASE_TAG=$TAG" >> "$GITHUB_ENV"
+
       - name: Check out tagged source
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ inputs.tag || github.ref }}
 
       - name: Set up JDK 25
         uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
@@ -29,7 +57,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          TAG="${GITHUB_REF_NAME}"
+          TAG="${RELEASE_TAG}"
           VERSION="${TAG#android-v}"
 
           if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -150,7 +178,7 @@ jobs:
           APK="dist/ikev2-android-v${RELEASE_VERSION}.apk"
           CHECKSUM="${APK}.sha256"
 
-          gh release create "${GITHUB_REF_NAME}" \
+          gh release create "${RELEASE_TAG}" \
             "$APK" \
             "$CHECKSUM" \
             --title "IKEv2 Android Client v${RELEASE_VERSION}" \

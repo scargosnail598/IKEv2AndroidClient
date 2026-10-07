@@ -1,0 +1,89 @@
+name: Tag Android Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Android version to tag (for example 1.2.0)
+        required: true
+        type: string
+      device_validation_passed:
+        description: Confirm the signed release candidate passed RELEASE_TESTING.md
+        required: true
+        type: boolean
+
+permissions:
+  actions: write
+  contents: write
+
+jobs:
+  tag:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out main with full history
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          fetch-depth: 0
+
+      - name: Validate release request
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          DEVICE_VALIDATION_PASSED: ${{ inputs.device_validation_passed }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "$DEVICE_VALIDATION_PASSED" != "true" ]]; then
+            echo "Device validation sign-off is required before tagging."
+            exit 1
+          fi
+
+          if [[ ! "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid version: $RELEASE_VERSION"
+            echo "Expected format: X.Y.Z"
+            exit 1
+          fi
+
+          APP_VERSION="$(sed -n 's/^[[:space:]]*versionName[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' app/build.gradle.kts | head -n 1)"
+          if [[ "$RELEASE_VERSION" != "$APP_VERSION" ]]; then
+            echo "Requested version $RELEASE_VERSION does not match app version $APP_VERSION."
+            exit 1
+          fi
+
+          TAG="android-v${RELEASE_VERSION}"
+          if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null; then
+            echo "Tag already exists: $TAG"
+            exit 1
+          fi
+
+          echo "RELEASE_TAG=$TAG" >> "$GITHUB_ENV"
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: gradle
+
+      - name: Validate release source
+        run: ./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug
+
+      - name: Create and push annotated release tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$RELEASE_TAG" -m "Android release $RELEASE_TAG"
+          git push origin "refs/tags/$RELEASE_TAG"
+
+      - name: Start signed release workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run android-release.yml --ref main --field tag="$RELEASE_TAG"

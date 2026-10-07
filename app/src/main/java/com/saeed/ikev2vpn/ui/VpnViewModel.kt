@@ -121,6 +121,7 @@ class VpnViewModel(
                 mutableUiState.update { current ->
                     current.copy(
                         certificateInfo = loaded.info,
+                        usesPublicCertificateTrust = false,
                         importedProfileInfo = null,
                         fieldErrors = current.fieldErrors - ProfileField.CERTIFICATE,
                         isBusy = false,
@@ -162,7 +163,8 @@ class VpnViewModel(
                         profileName = imported.config.profileName,
                         serverAddress = imported.config.serverAddress,
                         username = imported.config.username,
-                        certificateInfo = imported.certificate.info,
+                        certificateInfo = imported.certificate?.info,
+                        usesPublicCertificateTrust = imported.usesPublicCertificateTrust,
                         importedProfileInfo = ImportedProfileUiInfo(
                             remoteId = imported.remoteId,
                             serverProfile = imported.serverProfile,
@@ -210,7 +212,7 @@ class VpnViewModel(
             serverAddress = state.serverAddress,
             username = state.username,
             password = password,
-            hasCertificate = certificate != null,
+            hasCertificate = certificate != null || state.usesPublicCertificateTrust,
         )
         if (!validation.isValid) {
             mutableUiState.update { it.copy(fieldErrors = validation.errors) }
@@ -234,10 +236,10 @@ class VpnViewModel(
             var staged = false
             var platformProfileReplaced = false
             try {
-                profileRepository.stageProfile(config, certificate!!)
+                profileRepository.stageProfile(config, certificate)
                 staged = true
                 ensureActive()
-                when (val result = vpnController.provision(config, password, certificate.certificate)) {
+                when (val result = vpnController.provision(config, password, certificate?.certificate)) {
                     is VpnResult.Failure -> {
                         abortStagedProvision(
                             result.userMessage,
@@ -375,7 +377,8 @@ class VpnViewModel(
                     profileName = profile.config.profileName,
                     serverAddress = profile.config.serverAddress,
                     username = profile.config.username,
-                    certificateInfo = profile.certificate.info,
+                    certificateInfo = profile.certificate?.info,
+                    usesPublicCertificateTrust = profile.certificate == null,
                     importedProfileInfo = null,
                     fieldErrors = emptyMap(),
                 )
@@ -397,7 +400,8 @@ class VpnViewModel(
                     profileName = committed.config.profileName,
                     serverAddress = committed.config.serverAddress,
                     username = committed.config.username,
-                    certificateInfo = committed.certificate.info,
+                    certificateInfo = committed.certificate?.info,
+                    usesPublicCertificateTrust = committed.certificate == null,
                     importedProfileInfo = null,
                     fieldErrors = emptyMap(),
                     isBusy = false,
@@ -432,7 +436,8 @@ class VpnViewModel(
                     profileName = displayedProfile.config.profileName,
                     serverAddress = displayedProfile.config.serverAddress,
                     username = displayedProfile.config.username,
-                    certificateInfo = displayedProfile.certificate.info,
+                    certificateInfo = displayedProfile.certificate?.info,
+                    usesPublicCertificateTrust = displayedProfile.certificate == null,
                 )
             } else {
                 current
@@ -476,7 +481,8 @@ class VpnViewModel(
                 profileName = committed.config.profileName,
                 serverAddress = committed.config.serverAddress,
                 username = committed.config.username,
-                certificateInfo = committed.certificate.info,
+                certificateInfo = committed.certificate?.info,
+                usesPublicCertificateTrust = committed.certificate == null,
                 configured = true,
                 provisioningStatus = ProvisioningStatus.PROVISIONED,
                 screen = AppScreen.MAIN,
@@ -579,7 +585,7 @@ class VpnViewModel(
     private fun proxySummary(proxy: ImportedProxyMetadata): String {
         return if (proxy.enabled) {
             "Proxy Mode available: ${proxy.host}:${proxy.port}\n" +
-                "Android v1.1 currently uses Full Tunnel only."
+                "Android v1.2 currently uses Full Tunnel only."
         } else {
             "Proxy Mode not advertised"
         }

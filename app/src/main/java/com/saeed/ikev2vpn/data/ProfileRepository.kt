@@ -23,7 +23,7 @@ private val Context.profileDataStore by preferencesDataStore(name = "vpn_profile
 
 data class StoredProfile(
     val config: VpnProfileConfig,
-    val certificate: LoadedCertificate,
+    val certificate: LoadedCertificate?,
     val status: ProvisioningStatus,
 )
 
@@ -45,11 +45,11 @@ interface ProfileRepository {
 
     suspend fun saveProfile(
         config: VpnProfileConfig,
-        certificate: LoadedCertificate,
+        certificate: LoadedCertificate?,
         status: ProvisioningStatus,
     )
 
-    suspend fun stageProfile(config: VpnProfileConfig, certificate: LoadedCertificate)
+    suspend fun stageProfile(config: VpnProfileConfig, certificate: LoadedCertificate?)
     suspend fun commitStagedProfile()
     suspend fun abortStagedProfile(platformProfileReplaced: Boolean)
     suspend fun setProvisioningStatus(status: ProvisioningStatus)
@@ -82,41 +82,34 @@ class DataStoreProfileRepository(
 
     override suspend fun saveProfile(
         config: VpnProfileConfig,
-        certificate: LoadedCertificate,
+        certificate: LoadedCertificate?,
         status: ProvisioningStatus,
     ) {
-        val certificateFile = certificateFileForFingerprint(certificate.info.sha256Fingerprint)
-            ?: throw IOException("The CA certificate fingerprint is invalid.")
-        withContext(Dispatchers.IO) {
-            writeCertificate(certificateFile, certificate.derBytes)
-        }
+        certificate?.let { saveCertificate(it) }
         applicationContext.profileDataStore.edit { preferences ->
             preferences[PROFILE_NAME] = config.profileName
             preferences[SERVER_ADDRESS] = config.serverAddress
             preferences[USERNAME] = config.username
-            preferences[CERTIFICATE_FINGERPRINT] = certificate.info.sha256Fingerprint
+            setCertificateFingerprint(preferences, CERTIFICATE_FINGERPRINT, certificate)
             preferences[STATUS] = status.name
             removePendingValues(preferences)
         }
-        removeUnreferencedCertificatesForFingerprints(setOf(certificate.info.sha256Fingerprint))
+        removeUnreferencedCertificatesForFingerprints(setOfNotNull(certificate?.info?.sha256Fingerprint))
     }
 
     override suspend fun stageProfile(
         config: VpnProfileConfig,
-        certificate: LoadedCertificate,
+        certificate: LoadedCertificate?,
     ) {
-        val certificateFile = certificateFileForFingerprint(certificate.info.sha256Fingerprint)
-            ?: throw IOException("The CA certificate fingerprint is invalid.")
-        withContext(Dispatchers.IO) {
-            writeCertificate(certificateFile, certificate.derBytes)
-        }
-        val activeFingerprints = mutableSetOf(certificate.info.sha256Fingerprint)
+        certificate?.let { saveCertificate(it) }
+        val activeFingerprints = mutableSetOf<String>()
+        certificate?.info?.sha256Fingerprint?.let(activeFingerprints::add)
         applicationContext.profileDataStore.edit { preferences ->
             preferences[CERTIFICATE_FINGERPRINT]?.let(activeFingerprints::add)
             preferences[PENDING_PROFILE_NAME] = config.profileName
             preferences[PENDING_SERVER_ADDRESS] = config.serverAddress
             preferences[PENDING_USERNAME] = config.username
-            preferences[PENDING_CERTIFICATE_FINGERPRINT] = certificate.info.sha256Fingerprint
+            setCertificateFingerprint(preferences, PENDING_CERTIFICATE_FINGERPRINT, certificate)
         }
         removeUnreferencedCertificatesForFingerprints(activeFingerprints)
     }
@@ -129,7 +122,7 @@ class DataStoreProfileRepository(
             preferences[PROFILE_NAME] = pending.config.profileName
             preferences[SERVER_ADDRESS] = pending.config.serverAddress
             preferences[USERNAME] = pending.config.username
-            preferences[CERTIFICATE_FINGERPRINT] = pending.certificateFingerprint
+            setCertificateFingerprint(preferences, CERTIFICATE_FINGERPRINT, pending.certificateFingerprint)
             preferences[STATUS] = ProvisioningStatus.PROVISIONED.name
             activeFingerprint = pending.certificateFingerprint
             removePendingValues(preferences)
@@ -152,7 +145,7 @@ class DataStoreProfileRepository(
                 preferences[PROFILE_NAME] = pending.config.profileName
                 preferences[SERVER_ADDRESS] = pending.config.serverAddress
                 preferences[USERNAME] = pending.config.username
-                preferences[CERTIFICATE_FINGERPRINT] = pending.certificateFingerprint
+                setCertificateFingerprint(preferences, CERTIFICATE_FINGERPRINT, pending.certificateFingerprint)
                 preferences[STATUS] = ProvisioningStatus.DRAFT.name
                 activeFingerprints += pending.certificateFingerprint
             }
@@ -230,17 +223,18 @@ class DataStoreProfileRepository(
             }
         }
 
-        val certificateFile = certificateFileForFingerprint(values.certificateFingerprint)
-            ?: return ProfileLoadResult(error = "The ${if (pending) "staged" else "stored"} CA certificate fingerprint is invalid.")
-        val certificate = try {
-            certificateLoader.load(certificateFile.readFully())
-        } catch (_: Exception) {
-            return ProfileLoadResult(error = "The ${if (pending) "staged" else "stored"} CA certificate could not be validated.")
-        }
-        if (certificate.info.sha256Fingerprint != values.certificateFingerprint) {
-            return ProfileLoadResult(
-                error = "The ${if (pending) "staged" else "stored"} CA certificate fingerprint does not match the profile.",
-            )
+        val certificate = values.certificateFingerprint?.let { fingerprint ->
+            val certificateFile = certificateFileForFingerprint(fingerprint)
+                ?: return ProfileLoadResult(error = "The ${if (pending) "staged" else "stored"} CA certificate fingerprint is invalid.")
+            val loaded = try {
+                certificateLoader.load(certificateFile.readFully())
+            } catch (_: Exception) {
+                return ProfileLoadResult(error = "The ${if (pending) "staged" else "stored"} CA certificate could not be validated.")
+            }
+            if (loaded.info.sha256Fingerprint != fingerprint) {
+                return ProfileLoadResult(error = "The ${if (pending) "staged" else "stored"} CA certificate fingerprint does not match the profile.")
+            }
+            loaded
         }
         val status = if (pending) {
             ProvisioningStatus.PENDING_CONSENT
@@ -274,7 +268,7 @@ class DataStoreProfileRepository(
         username: String?,
         certificateFingerprint: String?,
     ): ProfileValues? {
-        if (profileName == null || serverAddress == null || username == null || certificateFingerprint == null) {
+        if (profileName == null || serverAddress == null || username == null) {
             return null
         }
         return ProfileValues(
@@ -308,6 +302,29 @@ class DataStoreProfileRepository(
         }
     }
 
+    private suspend fun saveCertificate(certificate: LoadedCertificate) {
+        val file = certificateFileForFingerprint(certificate.info.sha256Fingerprint)
+            ?: throw IOException("The CA certificate fingerprint is invalid.")
+        withContext(Dispatchers.IO) { writeCertificate(file, certificate.derBytes) }
+    }
+
+    private fun setCertificateFingerprint(
+        preferences: androidx.datastore.preferences.core.MutablePreferences,
+        key: androidx.datastore.preferences.core.Preferences.Key<String>,
+        certificate: LoadedCertificate?,
+    ) {
+        if (certificate == null) preferences.remove(key)
+        else preferences[key] = certificate.info.sha256Fingerprint
+    }
+
+    private fun setCertificateFingerprint(
+        preferences: androidx.datastore.preferences.core.MutablePreferences,
+        key: androidx.datastore.preferences.core.Preferences.Key<String>,
+        fingerprint: String?,
+    ) {
+        if (fingerprint == null) preferences.remove(key) else preferences[key] = fingerprint
+    }
+
     private suspend fun removeUnreferencedCertificatesForFingerprints(fingerprints: Set<String>) {
         val activeFiles = fingerprints.mapNotNull(::certificateFileForFingerprint)
             .map { it.baseFile }
@@ -325,7 +342,7 @@ class DataStoreProfileRepository(
 
     private data class ProfileValues(
         val config: VpnProfileConfig,
-        val certificateFingerprint: String,
+        val certificateFingerprint: String?,
     )
 
     private data class ProfileLoadResult(

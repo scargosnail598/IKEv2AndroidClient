@@ -6,7 +6,7 @@ with Jetpack Compose and Material 3.
 
 ## Status and version
 
-The current application version is **1.1.0** (`versionCode = 2`). The Gradle
+The current application version is **1.2.0** (`versionCode = 3`). The Gradle
 configuration in `app/build.gradle.kts` is the version source of truth.
 
 The repository is maintained as an independent Android project. Release-device
@@ -50,7 +50,7 @@ the pinned Gradle 9.5 wrapper.
 - Native Android VPN provisioning and consent
 - Connect, disconnect, reconnect, and platform-confirmed status
 - Private CA import from DER or PEM
-- Portable `.ikev` schema version 1 import
+- Portable `.ikev` schema version 1 import with private or public CA trust
 - Manual profile configuration
 - Sanitized diagnostics
 - Persistent light/dark theme selection
@@ -68,11 +68,12 @@ implementations may report transitions or failure details slowly.
 
 ## Portable `.ikev` import
 
-Android v1.1 supports `.ikev` schema version 1 only. A portable profile contains
-the server, Remote ID, username, public CA certificate, CA SHA-256 fingerprint,
-and informational server/proxy metadata. It never contains a VPN password or
-private key. The source JSON and Base64 certificate text are read once and are
-not persisted.
+Android v1.2 supports `.ikev` schema version 1 only. A portable profile contains
+the server, Remote ID, username, and either the private CA certificate with its
+SHA-256 fingerprint or `certificate_trust: "public"` for a server
+certificate trusted by Android. It may also include informational server/proxy
+metadata. It never contains a VPN password or private key. The source JSON and
+Base64 certificate text are read once and are not persisted.
 
 1. Export `username.ikev` from the server environment.
 2. Copy or share it to the Android device.
@@ -83,8 +84,9 @@ not persisted.
 
 Import validates the frozen format and version, EAP-MSCHAPv2 authentication,
 Full Tunnel mode, profile/server/username fields, embedded DER CA validity and
-CA Basic Constraints, and the CA SHA-256 fingerprint. Import populates the
-setup screen but does not provision or replace the Android VPN profile until
+CA Basic Constraints and SHA-256 fingerprint for private-CA profiles. Public
+trust profiles omit CA data and use Android's platform certificate validation.
+Import populates the setup screen but does not provision or replace the Android VPN profile until
 the user selects **Save / Provision VPN**.
 
 Android's current `Ikev2VpnProfile.Builder` path cannot represent an independent
@@ -179,15 +181,15 @@ read -rsp "Key password: " ANDROID_KEY_PASSWORD; export ANDROID_KEY_PASSWORD; pr
 An explicit release task fails when any signing value is missing. Debug builds,
 tests, and lint do not read or require signing credentials.
 
-After completing [RELEASE_TESTING.md](RELEASE_TESTING.md), build v1.1.0 with:
+After completing [RELEASE_TESTING.md](RELEASE_TESTING.md), build v1.2.0 with:
 
 ```bash
 ./gradlew --no-daemon --no-configuration-cache clean testDebugUnitTest lintDebug assembleRelease
 mkdir -p dist
-cp app/build/outputs/apk/release/app-release.apk dist/ikev2-android-v1.1.0.apk
-apksigner verify --verbose --print-certs dist/ikev2-android-v1.1.0.apk
-(cd dist && sha256sum ikev2-android-v1.1.0.apk > ikev2-android-v1.1.0.apk.sha256)
-(cd dist && sha256sum -c ikev2-android-v1.1.0.apk.sha256)
+cp app/build/outputs/apk/release/app-release.apk dist/ikev2-android-v1.2.0.apk
+apksigner verify --verbose --print-certs dist/ikev2-android-v1.2.0.apk
+(cd dist && sha256sum ikev2-android-v1.2.0.apk > ikev2-android-v1.2.0.apk.sha256)
+(cd dist && sha256sum -c ikev2-android-v1.2.0.apk.sha256)
 unset ANDROID_KEYSTORE_PATH ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD
 ```
 
@@ -197,9 +199,12 @@ to the Android plugin during configuration. Retain the signing-certificate
 SHA-256 digest with the release record and keep the same production signing key
 for every update.
 
-`dist/` is ignored. A human release owner may create the tag
-`android-v1.1.0` only after validation; no build or CI command creates tags,
-publishes releases, or uploads production artifacts.
+`dist/` is ignored. After the signed release candidate passes the manual device
+checklist, run **Tag Android Release** from the Actions tab on `main`, enter
+`1.2.0`, and confirm device validation. The workflow checks that the requested
+version matches Gradle, runs unsigned CI validation, creates the annotated tag,
+and starts **Android Release** to build and publish the signed APK and checksum.
+The Android Release workflow can also be started manually for an existing tag.
 
 ## Testing
 
@@ -231,7 +236,7 @@ checklist, not as evidence that testing has already passed.
 
 Potential future work includes a separate local IKE identity, multiple
 profiles, additional routing modes, and device-validated release automation.
-These are not part of the current v1.1 scope.
+These are not part of the current v1.2 scope.
 
 ## License
 

@@ -368,7 +368,11 @@ private fun CertificateSection(
         Text("CA Certificate", style = MaterialTheme.typography.titleMedium)
         if (certificate == null) {
             Text(
-                "A CA certificate is required to verify the VPN server.",
+                if (state.usesPublicCertificateTrust) {
+                    "This profile uses Android's trusted public certificate authorities."
+                } else {
+                    "A CA certificate is required to verify the VPN server."
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -377,7 +381,7 @@ private fun CertificateSection(
                 modifier = Modifier.fillMaxWidth(),
                 enabled = !state.isBusy,
             ) {
-                Text("Import CA Certificate")
+                Text(if (state.usesPublicCertificateTrust) "Import Private CA Instead" else "Import CA Certificate")
             }
         } else {
             Card(

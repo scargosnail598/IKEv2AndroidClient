@@ -1,7 +1,7 @@
-# Android v1.1.0 Release Testing
+# Android v1.2.0 Release Testing
 
 Complete this checklist against the release candidate before creating
-`android-v1.1.0`. Record only observed results as `PASS`, `FAIL`, or `BLOCKED`;
+`android-v1.2.0`. Record only observed results as `PASS`, `FAIL`, or `BLOCKED`;
 this document is not evidence that any test has already passed.
 
 ## Device record matrix
@@ -19,6 +19,8 @@ review any exception.
 
 - Use a disposable EAP account and the server's public `ca-cert.cer`.
 - Prepare a valid v1 `.ikev` profile for that account.
+- For public-CA server mode, prepare a public-trust `.ikev` profile and verify
+  that its certificate is trusted by Android's system trust store.
 - Record the device's original public IPv4, DNS behavior, and active network.
 - Verify the signed APK checksum before installation.
 - Capture only sanitized logs and screenshots.
@@ -35,6 +37,8 @@ review any exception.
       configured on a clean install.
 - [ ] Import a valid `.ikev` file; verify profile name, server, username, CA
       summary, and fingerprint before provisioning.
+- [ ] Import a public-trust `.ikev` profile; confirm the UI identifies Android
+      system CA validation and the profile provisions without an embedded CA.
 - [ ] Enter the password, select **Save / Provision VPN**, approve Android VPN
       consent, and confirm provisioning succeeds.
 - [ ] Reprovision through **Edit Profile** with valid manual configuration and
@@ -66,6 +70,8 @@ Perform each case independently and restore the valid profile afterward:
 - [ ] Malformed Base64 certificate data is rejected.
 - [ ] A non-CA, expired, or not-yet-valid certificate is rejected.
 - [ ] A CA fingerprint mismatch is rejected.
+- [ ] A public-trust profile with embedded CA data or an unknown trust mode is
+      rejected.
 - [ ] Unsupported authentication or tunnel mode is rejected.
 - [ ] A Remote ID that differs from the server is rejected.
 - [ ] Rejection does not overwrite the previously committed profile or CA.
@@ -113,5 +119,5 @@ Perform each case independently and restore the valid profile afterward:
 | APK checksum verified |  |  |
 | Signing key backup verified |  |  |
 
-Do not mark v1.1.0 ready while any required gate has failed or remains
+Do not mark v1.2.0 ready while any required gate has failed or remains
 unexplained. Attach only sanitized evidence and record device-specific quirks.

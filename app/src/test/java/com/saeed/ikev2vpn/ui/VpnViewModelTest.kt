@@ -198,7 +198,7 @@ class VpnViewModelTest {
 
         override suspend fun saveProfile(
             config: VpnProfileConfig,
-            certificate: LoadedCertificate,
+            certificate: LoadedCertificate?,
             status: ProvisioningStatus,
         ) {
             saveCalls += 1
@@ -238,7 +238,7 @@ class VpnViewModelTest {
         override fun provision(
             config: VpnProfileConfig,
             password: String,
-            serverRootCa: X509Certificate,
+            serverRootCa: X509Certificate?,
         ): VpnResult<ProvisioningAction> {
             provisionCalls += 1
             return VpnResult.Success(ProvisioningAction.Complete)
