@@ -147,7 +147,7 @@ class DataStoreProfileRepository(
                 preferences[USERNAME] = pending.config.username
                 setCertificateFingerprint(preferences, CERTIFICATE_FINGERPRINT, pending.certificateFingerprint)
                 preferences[STATUS] = ProvisioningStatus.DRAFT.name
-                activeFingerprints += pending.certificateFingerprint
+                pending.certificateFingerprint?.let(activeFingerprints::add)
             }
             removePendingValues(preferences)
         }
