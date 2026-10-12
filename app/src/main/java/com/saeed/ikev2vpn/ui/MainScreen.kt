@@ -61,7 +61,7 @@ fun MainScreen(
             )
         }
         Text(
-            text = if (state.stateConfirmed) "Confirmed by Android" else "Awaiting platform confirmation",
+            text = if (state.stateConfirmed) "Confirmed by strongSwan" else "Awaiting strongSwan confirmation",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -72,7 +72,9 @@ fun MainScreen(
         val connected = state.connectionState == ConnectionState.CONNECTED
         val unknown = state.connectionState == ConnectionState.UNKNOWN
         Button(
-            onClick = if (connected || connecting || unknown) onDisconnect else onConnect,
+            onClick = {
+                if (connected || connecting || unknown) onDisconnect() else onConnect()
+            },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(64.dp),
@@ -138,6 +140,7 @@ fun MainScreen(
             )
         }
     }
+
 }
 
 @Composable

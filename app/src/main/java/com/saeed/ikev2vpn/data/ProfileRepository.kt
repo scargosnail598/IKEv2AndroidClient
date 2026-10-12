@@ -1,6 +1,7 @@
 package com.saeed.ikev2vpn.data
 
 import android.content.Context
+import android.util.Base64
 import android.util.AtomicFile
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
@@ -10,6 +11,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.saeed.ikev2vpn.certificate.CertificateLoader
 import com.saeed.ikev2vpn.certificate.LoadedCertificate
 import com.saeed.ikev2vpn.diagnostics.DiagnosticSanitizer
+import com.saeed.ikev2vpn.vpn.VpnLogEntry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
@@ -32,6 +34,7 @@ data class StoredDiagnostics(
     val lastTechnicalError: String? = null,
     val lastErrorTimestamp: Long? = null,
     val repositoryError: String? = null,
+    val connectionEvents: List<VpnLogEntry> = emptyList(),
 )
 
 data class RepositorySnapshot(
@@ -55,6 +58,8 @@ interface ProfileRepository {
     suspend fun setProvisioningStatus(status: ProvisioningStatus)
     suspend fun recordError(userMessage: String, technicalMessage: String)
     suspend fun clearError()
+    suspend fun recordConnectionEvents(events: List<VpnLogEntry>) = Unit
+    suspend fun clearConnectionEvents() = Unit
 }
 
 class DataStoreProfileRepository(
@@ -179,11 +184,41 @@ class DataStoreProfileRepository(
         }
     }
 
+    override suspend fun recordConnectionEvents(events: List<VpnLogEntry>) {
+        if (events.isEmpty()) return
+        applicationContext.profileDataStore.edit { preferences ->
+            val stored = decodeConnectionEvents(preferences[CONNECTION_EVENTS].orEmpty()).toMutableList()
+            events.forEach { event ->
+                val sanitized = event.copy(
+                    message = DiagnosticSanitizer.sanitize(event.message),
+                    detail = event.detail?.let(DiagnosticSanitizer::sanitize),
+                )
+                val existingIndex = stored.indexOfFirst {
+                    it.timestamp == sanitized.timestamp && it.message == sanitized.message
+                }
+                if (existingIndex >= 0) {
+                    val existing = stored[existingIndex]
+                    if (!sanitized.detail.isNullOrBlank()) {
+                        stored[existingIndex] = existing.copy(detail = sanitized.detail)
+                    }
+                } else {
+                    stored += sanitized
+                }
+            }
+            preferences[CONNECTION_EVENTS] = encodeConnectionEvents(stored.takeLast(MAX_STORED_CONNECTION_EVENTS))
+        }
+    }
+
+    override suspend fun clearConnectionEvents() {
+        applicationContext.profileDataStore.edit { preferences -> preferences.remove(CONNECTION_EVENTS) }
+    }
+
     private fun toSnapshot(preferences: Preferences): RepositorySnapshot {
         var diagnostics = StoredDiagnostics(
             lastError = preferences[LAST_ERROR],
             lastTechnicalError = preferences[LAST_TECHNICAL_ERROR],
             lastErrorTimestamp = preferences[LAST_ERROR_TIMESTAMP],
+            connectionEvents = decodeConnectionEvents(preferences[CONNECTION_EVENTS].orEmpty()),
         )
         val committed = loadProfile(preferences, pending = false)
         val pending = loadProfile(preferences, pending = true)
@@ -345,6 +380,29 @@ class DataStoreProfileRepository(
         val certificateFingerprint: String?,
     )
 
+    private fun encodeConnectionEvents(events: List<VpnLogEntry>): String = events.joinToString("\n") { event ->
+        val message = Base64.encodeToString(event.message.toByteArray(Charsets.UTF_8), Base64.URL_SAFE or Base64.NO_WRAP)
+        val detail = event.detail?.let {
+            Base64.encodeToString(it.toByteArray(Charsets.UTF_8), Base64.URL_SAFE or Base64.NO_WRAP)
+        }.orEmpty()
+        "${event.timestamp}|$message|$detail"
+    }
+
+    private fun decodeConnectionEvents(value: String): List<VpnLogEntry> = value.lineSequence()
+        .mapNotNull { line ->
+            val parts = line.split('|', limit = 3)
+            val timestamp = parts.getOrNull(0)?.toLongOrNull() ?: return@mapNotNull null
+            val message = parts.getOrNull(1)?.decodeBase64Utf8() ?: return@mapNotNull null
+            val detail = parts.getOrNull(2)?.takeIf(String::isNotEmpty)?.decodeBase64Utf8()
+            VpnLogEntry(timestamp, message, detail)
+        }
+        .toList()
+        .takeLast(MAX_STORED_CONNECTION_EVENTS)
+
+    private fun String.decodeBase64Utf8(): String? = runCatching {
+        String(Base64.decode(this, Base64.URL_SAFE or Base64.NO_WRAP), Charsets.UTF_8)
+    }.getOrNull()
+
     private data class ProfileLoadResult(
         val profile: StoredProfile? = null,
         val error: String? = null,
@@ -352,6 +410,7 @@ class DataStoreProfileRepository(
 
     private companion object {
         const val CERTIFICATE_FILE_PREFIX = "vpn_ca_"
+        const val MAX_STORED_CONNECTION_EVENTS = 200
         val HEX_SHA_256 = Regex("[0-9A-F]{64}")
         val PROFILE_NAME = stringPreferencesKey("profile_name")
         val SERVER_ADDRESS = stringPreferencesKey("server_address")
@@ -365,5 +424,6 @@ class DataStoreProfileRepository(
         val LAST_ERROR = stringPreferencesKey("last_error")
         val LAST_TECHNICAL_ERROR = stringPreferencesKey("last_technical_error")
         val LAST_ERROR_TIMESTAMP = longPreferencesKey("last_error_timestamp")
+        val CONNECTION_EVENTS = stringPreferencesKey("connection_events")
     }
 }

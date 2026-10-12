@@ -96,6 +96,7 @@ fun VpnApp(
         AppScreen.DIAGNOSTICS -> DiagnosticsScreen(
             state = state,
             onBack = viewModel::showMain,
+            onClearLog = viewModel::clearConnectionLog,
         )
     }
 }

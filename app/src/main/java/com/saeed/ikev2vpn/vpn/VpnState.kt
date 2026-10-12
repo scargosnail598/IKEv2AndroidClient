@@ -13,6 +13,7 @@ enum class ConnectionState {
 enum class StateEvidence {
     NONE,
     LOCAL_REQUEST,
+    STRONGSWAN_SERVICE,
     API_33_PROFILE_STATE,
     API_33_EVENT,
     OWNED_VPN_NETWORK,
@@ -138,7 +139,14 @@ object VpnStateReducer {
             is VpnStateEvent.PlatformStateObserved -> "Android VPN state: ${event.state}."
             is VpnStateEvent.Failed -> "VPN error: ${event.userMessage}"
         }
-        return next.copy(events = (current.events + VpnLogEntry(System.currentTimeMillis(), message)).takeLast(100))
+        val isRepeatedPlatformState = event is VpnStateEvent.PlatformStateObserved &&
+            current.connectionState == event.state &&
+            (event.sessionId == null || current.sessionId == event.sessionId)
+        return if (isRepeatedPlatformState) {
+            next.copy(events = current.events)
+        } else {
+            next.copy(events = (current.events + VpnLogEntry(System.currentTimeMillis(), message)).takeLast(100))
+        }
     }
 
     fun shouldApplyPlatformObservation(

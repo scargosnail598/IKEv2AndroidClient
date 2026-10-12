@@ -13,6 +13,8 @@ local.properties
 captures/
 .externalNativeBuild/
 .cxx/
+third_party/openssl-3.5.9-src/
+third_party/strongswan/src/frontends/android/app/src/main/jni/openssl/
 
 # Packaged artifacts and release staging
 *.apk

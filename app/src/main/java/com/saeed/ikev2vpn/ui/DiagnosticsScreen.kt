@@ -27,7 +27,7 @@ import java.text.DateFormat
 import java.util.Date
 
 @Composable
-fun DiagnosticsScreen(state: VpnUiState, onBack: () -> Unit) {
+fun DiagnosticsScreen(state: VpnUiState, onBack: () -> Unit, onClearLog: () -> Unit) {
     val context = LocalContext.current
     Column(
         modifier = Modifier
@@ -86,6 +86,10 @@ fun DiagnosticsScreen(state: VpnUiState, onBack: () -> Unit) {
                 enabled = state.connectionEvents.isNotEmpty(),
                 onClick = { copyConnectionLog(context, state) },
             ) { Text("Copy") }
+            TextButton(
+                enabled = state.connectionEvents.isNotEmpty(),
+                onClick = onClearLog,
+            ) { Text("Clear") }
         }
         Text(
             "These are VPN events reported to the app by Android. Android does not expose the full IKE packet log here.",

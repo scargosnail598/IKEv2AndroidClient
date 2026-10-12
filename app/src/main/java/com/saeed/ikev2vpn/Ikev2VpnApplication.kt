@@ -1,6 +1,5 @@
 package com.saeed.ikev2vpn
 
-import android.app.Application
 import com.saeed.ikev2vpn.certificate.AndroidCertificateImporter
 import com.saeed.ikev2vpn.certificate.CertificateImporter
 import com.saeed.ikev2vpn.certificate.CertificateLoader
@@ -9,16 +8,18 @@ import com.saeed.ikev2vpn.data.ProfileRepository
 import com.saeed.ikev2vpn.data.ThemePreferences
 import com.saeed.ikev2vpn.profile.AndroidIkevProfileImporter
 import com.saeed.ikev2vpn.profile.IkevProfileImporter
-import com.saeed.ikev2vpn.vpn.AndroidVpnPlatformController
+import com.saeed.ikev2vpn.vpn.StrongSwanVpnController
+import com.saeed.ikev2vpn.vpn.VpnPlatformController
+import org.strongswan.android.logic.StrongSwanApplication
 
-class Ikev2VpnApplication : Application() {
+class Ikev2VpnApplication : StrongSwanApplication() {
     lateinit var profileRepository: ProfileRepository
         private set
     lateinit var certificateImporter: CertificateImporter
         private set
     lateinit var ikevProfileImporter: IkevProfileImporter
         private set
-    lateinit var vpnController: AndroidVpnPlatformController
+    lateinit var vpnController: VpnPlatformController
         private set
     lateinit var themePreferences: ThemePreferences
         private set
@@ -29,7 +30,7 @@ class Ikev2VpnApplication : Application() {
         profileRepository = DataStoreProfileRepository(this, certificateLoader)
         certificateImporter = AndroidCertificateImporter(contentResolver, certificateLoader)
         ikevProfileImporter = AndroidIkevProfileImporter(contentResolver, certificateLoader)
-        vpnController = AndroidVpnPlatformController(this)
+        vpnController = StrongSwanVpnController(this)
         themePreferences = ThemePreferences(this)
     }
 }

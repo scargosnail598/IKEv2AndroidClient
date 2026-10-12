@@ -2,24 +2,30 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-feature
         android:name="android.software.ipsec_tunnels"
         android:required="false" />
 
     <application
-        android:name=".Ikev2VpnApplication"
+        android:name="com.saeed.ikev2vpn.Ikev2VpnApplication"
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="false"
         android:icon="@drawable/ic_vpn"
-        android:label="@string/app_name"
+        android:label="@string/ikev2_app_name"
         android:roundIcon="@drawable/ic_vpn"
         android:supportsRtl="true"
         android:theme="@style/Theme.Ikev2Vpn"
+        android:networkSecurityConfig="@xml/network_security_config"
         android:usesCleartextTraffic="false">
 
         <activity
-            android:name=".MainActivity"
+            android:name="com.saeed.ikev2vpn.MainActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -28,17 +34,38 @@
         </activity>
 
         <service
-            android:name=".vpn.VpnEventService"
-            android:exported="true"
+            android:name="org.strongswan.android.logic.VpnStateService"
+            android:exported="false" />
+
+        <service
+            android:name="org.strongswan.android.logic.CharonVpnService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse"
             android:permission="android.permission.BIND_VPN_SERVICE">
             <intent-filter>
-                <action android:name="android.net.action.VPN_MANAGER_EVENT" />
-                <category android:name="android.net.category.EVENT_ALWAYS_ON_STATE_CHANGED" />
-                <category android:name="android.net.category.EVENT_DEACTIVATED_BY_USER" />
-                <category android:name="android.net.category.EVENT_IKE_ERROR" />
-                <category android:name="android.net.category.EVENT_NETWORK_ERROR" />
+                <action android:name="android.net.VpnService" />
             </intent-filter>
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="IKEv2 VPN tunnel" />
         </service>
+
+        <activity
+            android:name="org.strongswan.android.ui.VpnProfileControlActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:taskAffinity=""
+            android:theme="@style/TransparentActivity">
+            <intent-filter>
+                <action android:name="org.strongswan.android.action.START_PROFILE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="org.strongswan.android.action.DISCONNECT" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
     </application>
 
 </manifest>

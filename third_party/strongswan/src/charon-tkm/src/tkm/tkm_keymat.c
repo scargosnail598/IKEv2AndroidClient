@@ -1,0 +1,796 @@
+/*
+ * Copyright (C) 2015-2026 Tobias Brunner
+ * Copyright (C) 2012 Reto Buerki
+ * Copyright (C) 2012 Adrian-Ken Rueegsegger
+ *
+ * Copyright (C) secunet Security Networks AG
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 2 of the License, or (at your
+ * option) any later version.  See <http://www.fsf.org/copyleft/gpl.txt>.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+ * or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+ * for more details.
+ */
+
+#include <daemon.h>
+#include <tkm/constants.h>
+#include <tkm/client.h>
+#include <collections/array.h>
+#include <collections/hashtable.h>
+#include <crypto/hashers/hash_algorithm_set.h>
+
+#include "tkm.h"
+#include "tkm_types.h"
+#include "tkm_utils.h"
+#include "tkm_key_exchange.h"
+#include "tkm_keymat.h"
+#include "tkm_aead.h"
+
+typedef struct private_tkm_keymat_t private_tkm_keymat_t;
+
+static array_t *ike_proposal_map = NULL;
+static array_t *esp_proposal_map = NULL;
+static hashtable_t *scheme_map = NULL;
+
+/**
+ * Private data of a keymat_t object.
+ */
+struct private_tkm_keymat_t {
+
+	/**
+	 * Public tkm_keymat_t interface.
+	 */
+	tkm_keymat_t public;
+
+	/**
+	 * IKE_SA Role, initiator or responder.
+	 */
+	bool initiator;
+
+	/**
+	 * AEAD implementation.
+	 */
+	aead_t *aead;
+
+	/**
+	 * ISA context id.
+	 */
+	isa_id_type isa_ctx_id;
+
+	/**
+	 * AE context id.
+	 */
+	ae_id_type ae_ctx_id;
+
+	/**
+	 * Authentication method from AUTH payload.
+	 */
+	auth_method_t auth_method;
+
+	/**
+	 * AUTH payload chunk.
+	 */
+	chunk_t auth_payload;
+
+	/**
+	 * Peer init message chunk.
+	 */
+	chunk_t other_init_msg;
+
+	/**
+	 * Set of hash algorithms supported by peer for signature authentication
+	 */
+	hash_algorithm_set_t *hash_algorithms;
+};
+
+METHOD(keymat_t, get_version, ike_version_t,
+	private_tkm_keymat_t *this)
+{
+	return IKEV2;
+}
+
+METHOD(keymat_t, create_ke, key_exchange_t*,
+	private_tkm_keymat_t *this, key_exchange_method_t ke)
+{
+	return lib->crypto->create_ke(lib->crypto, ke);
+}
+
+METHOD(keymat_t, create_nonce_gen, nonce_gen_t*,
+	private_tkm_keymat_t *this)
+{
+	return lib->crypto->create_nonce_gen(lib->crypto);
+}
+
+/**
+ * Proposal mapping entry
+ */
+typedef struct {
+	/** Proposal */
+	proposal_t *proposal;
+	/** Id */
+	uint64_t id;
+} entry_t;
+
+/**
+ * Determine the id for the given proposal
+ */
+static uint64_t get_proposal_id(proposal_t *proposal)
+{
+	array_t *map;
+	entry_t entry;
+	int i;
+
+	switch (proposal->get_protocol(proposal))
+	{
+		case PROTO_IKE:
+			map = ike_proposal_map;
+			break;
+		case PROTO_ESP:
+			map = esp_proposal_map;
+			break;
+		default:
+			return 0;
+	}
+	for (i = 0; i < array_count(map); i++)
+	{
+		array_get(map, i, &entry);
+		/* we never match DH groups as they are mapped and passed separately */
+		if (entry.proposal->matches(entry.proposal, proposal, PROPOSAL_SKIP_KE))
+		{
+			return entry.id;
+		}
+	}
+	return 0;
+}
+
+/**
+ * Concatenate the TKM KE IDs of the passed key exchanges
+ */
+static bool concat_ke_ids(array_t *kes, ke_ids_type *ids)
+{
+	tkm_key_exchange_t *tkm_ke;
+	uint32_t i;
+
+	memset(ids, 0, sizeof(*ids));
+	ids->size = array_count(kes);
+
+	if (!ids->size || ids->size > 8)
+	{
+		return FALSE;
+	}
+
+	for (i = 0; i < ids->size; i++)
+	{
+		array_get(kes, i, &tkm_ke);
+		ids->data[i] = tkm_ke->get_id(tkm_ke);
+	}
+	return TRUE;
+}
+
+METHOD(keymat_v2_t, derive_ike_keys, bool,
+	private_tkm_keymat_t *this, proposal_t *proposal, array_t *kes,
+	chunk_t nonce_i, chunk_t nonce_r, ike_sa_id_t *id,
+	pseudo_random_function_t rekey_function, chunk_t rekey_skd)
+{
+	uint64_t nc_id = 0, ia_id, spi_loc, spi_rem;
+	chunk_t *nonce;
+	ke_ids_type ke_ids;
+	nonce_type nonce_rem;
+	result_type res;
+	block_len_type block_len;
+	icv_len_type icv_len;
+	iv_len_type iv_len;
+	isa_flags_type flags;
+
+	if (!concat_ke_ids(kes, &ke_ids))
+	{
+		return FALSE;
+	}
+
+	if (this->initiator)
+	{
+		nonce = &nonce_i;
+		chunk_to_sequence(&nonce_r, &nonce_rem, sizeof(nonce_type));
+		spi_loc = id->get_initiator_spi(id);
+		spi_rem = id->get_responder_spi(id);
+		flags = TKM_ISA_INITIATOR;
+	}
+	else
+	{
+		nonce = &nonce_r;
+		chunk_to_sequence(&nonce_i, &nonce_rem, sizeof(nonce_type));
+		spi_loc = id->get_responder_spi(id);
+		spi_rem = id->get_initiator_spi(id);
+		flags = 0;
+	}
+
+	ia_id = get_proposal_id(proposal);
+	if (!ia_id)
+	{
+		DBG1(DBG_IKE, "unable to determine id for proposal %P", proposal);
+		return FALSE;
+	}
+
+	if (rekey_function == PRF_UNDEFINED)
+	{
+		/* Acquire nonce context id */
+		nc_id = tkm->chunk_map->get_id(tkm->chunk_map, nonce);
+		if (!nc_id)
+		{
+			DBG1(DBG_IKE, "unable to acquire context id for nonce");
+			return FALSE;
+		}
+
+		this->ae_ctx_id = tkm->idmgr->acquire_id(tkm->idmgr, TKM_CTX_AE);
+		if (!this->ae_ctx_id)
+		{
+			DBG1(DBG_IKE, "unable to acquire ae context id");
+			return FALSE;
+		}
+		DBG1(DBG_IKE, "deriving IKE keys (nc: %llu, ia: %llu, ke: %llu, "
+			 "spi_loc: %llx, spi_rem: %llx)", nc_id, ia_id, ke_ids.data[0],
+			 spi_loc, spi_rem);
+		res = ike_isa_create(this->isa_ctx_id, this->ae_ctx_id, ia_id,
+							 ke_ids.data[0], nc_id, nonce_rem, flags,
+							 spi_loc, spi_rem, &block_len, &icv_len, &iv_len);
+	}
+	else
+	{
+		isa_info_t isa_info;
+
+		if (rekey_skd.ptr == NULL || rekey_skd.len != sizeof(isa_info_t))
+		{
+			DBG1(DBG_IKE, "unable to retrieve parent isa info");
+			return FALSE;
+		}
+		isa_info = *((isa_info_t *)(rekey_skd.ptr));
+
+		if (this->ae_ctx_id == isa_info.ae_id)
+		{
+			DBG1(DBG_IKE, "deriving IKE keys (parent_isa: %llu, ae: %llu, ia: "
+				 "%llu, ke: %llu, spi_loc: %llx, spi_rem: %llx)",
+				 isa_info.parent_isa_id, isa_info.ae_id, ia_id, ke_ids.data[0],
+				 spi_loc, spi_rem);
+
+			res = ike_isa_update(this->isa_ctx_id, ke_ids.data[0]);
+		}
+		else if (!(nc_id = tkm->chunk_map->get_id(tkm->chunk_map, nonce)))
+		{
+			DBG1(DBG_IKE, "unable to acquire context id for nonce");
+			return FALSE;
+		}
+		else if (!tkm->idmgr->acquire_ref(tkm->idmgr, TKM_CTX_AE, isa_info.ae_id))
+		{
+			DBG1(DBG_IKE, "unable to acquire reference for ae: %llu",
+				 isa_info.ae_id);
+			return FALSE;
+		}
+		else
+		{
+			DBG1(DBG_IKE, "deriving IKE keys (parent_isa: %llu, ae: %llu, nc: "
+				 "%llu, ia: %llu, ke: %llu, spi_loc: %llx, spi_rem: %llx)",
+				 isa_info.parent_isa_id, isa_info.ae_id, nc_id, ia_id,
+				 ke_ids.data[0], spi_loc, spi_rem);
+
+			this->ae_ctx_id = isa_info.ae_id;
+			res = ike_isa_create_child(this->isa_ctx_id, isa_info.parent_isa_id,
+									   ia_id, ke_ids, nc_id, nonce_rem,
+									   flags, spi_loc, spi_rem,
+									   &block_len, &icv_len, &iv_len);
+		}
+
+		chunk_free(&rekey_skd);
+	}
+
+	if (nc_id)
+	{
+		tkm->chunk_map->remove(tkm->chunk_map, nonce);
+		if (ike_nc_reset(nc_id) != TKM_OK)
+		{
+			DBG1(DBG_IKE, "failed to reset nonce context %llu", nc_id);
+		}
+		tkm->idmgr->release_id(tkm->idmgr, TKM_CTX_NONCE, nc_id);
+	}
+
+	if (res != TKM_OK)
+	{
+		DBG1(DBG_IKE, "key derivation failed (isa: %llu)", this->isa_ctx_id);
+		return FALSE;
+	}
+
+	if (!this->aead)
+	{
+		this->aead = tkm_aead_create(this->isa_ctx_id, block_len, icv_len,
+									 iv_len);
+	}
+
+	/* TODO: Add failure handler (see keymat_v2.c) */
+
+	return TRUE;
+}
+
+METHOD(keymat_v2_t, derive_child_keys, bool,
+	private_tkm_keymat_t *this, proposal_t *proposal, array_t *kes,
+	chunk_t nonce_i, chunk_t nonce_r, chunk_t *encr_i, chunk_t *integ_i,
+	chunk_t *encr_r, chunk_t *integ_r)
+{
+	esa_info_t *esa_info_i, *esa_info_r;
+	ke_ids_type ke_ids = {};
+	ea_id_type ea_id;
+
+	if (kes && !concat_ke_ids(kes, &ke_ids))
+	{
+		return FALSE;
+	}
+
+	ea_id = get_proposal_id(proposal);
+	if (!ea_id)
+	{
+		DBG1(DBG_IKE, "unable to determine id for proposal %P", proposal);
+		return FALSE;
+	}
+
+	INIT(esa_info_i,
+		 .isa_id = this->isa_ctx_id,
+		 .spi_l = proposal->get_spi(proposal),
+		 .nonce_i = chunk_clone(nonce_i),
+		 .nonce_r = chunk_clone(nonce_r),
+		 .is_encr_r = FALSE,
+		 .ea_id = ea_id,
+		 .ke_ids = ke_ids,
+	);
+
+	INIT(esa_info_r,
+		 .isa_id = this->isa_ctx_id,
+		 .spi_l = proposal->get_spi(proposal),
+		 .nonce_i = chunk_clone(nonce_i),
+		 .nonce_r = chunk_clone(nonce_r),
+		 .is_encr_r = TRUE,
+		 .ea_id = ea_id,
+		 .ke_ids = ke_ids,
+	);
+
+	DBG1(DBG_CHD, "passing on esa info (isa: %llu, spi_l: %x, ea_id: %llu, "
+		 "ke_id[%llu]: %llu)", esa_info_i->isa_id, ntohl(esa_info_i->spi_l),
+		 esa_info_i->ea_id, esa_info_i->ke_ids.size, esa_info_i->ke_ids.data[0]);
+
+	/* store ESA info in encr_i/r, which is passed to add_sa */
+	*encr_i = chunk_create((u_char *)esa_info_i, sizeof(esa_info_t));
+	*encr_r = chunk_create((u_char *)esa_info_r, sizeof(esa_info_t));
+	*integ_i = chunk_empty;
+	*integ_r = chunk_empty;
+
+	return TRUE;
+}
+
+METHOD(keymat_t, get_aead, aead_t*,
+	private_tkm_keymat_t *this, bool in)
+{
+	return this->aead;
+}
+
+METHOD(keymat_v2_t, get_int_auth, bool,
+	private_tkm_keymat_t *this, bool verify, chunk_t data, chunk_t prev,
+	chunk_t *auth)
+{
+	blob_id_type data_id;
+	bool ret = FALSE;
+
+	*auth = chunk_empty;
+
+	data_id = tkm->idmgr->acquire_id(tkm->idmgr, TKM_CTX_BLOB);
+	if (data_id)
+	{
+		ret = chunk_to_blob(data_id, &data) &&
+		      ike_isa_int_auth(this->isa_ctx_id, verify, data_id) == TKM_OK;
+
+		tkm->idmgr->release_id(tkm->idmgr, TKM_CTX_BLOB, data_id);
+	}
+	return ret;
+}
+
+METHOD(keymat_v2_t, get_auth_octets, bool,
+	private_tkm_keymat_t *this, bool verify, chunk_t ike_sa_init,
+	chunk_t nonce, chunk_t int_auth, chunk_t ppk, identification_t *id,
+	char reserved[3], chunk_t *octets, array_t *schemes)
+{
+	sign_info_t *sign;
+
+	if (verify)
+	{
+		/* store peer init message for authentication step */
+		this->other_init_msg = chunk_clone(ike_sa_init);
+		*octets = chunk_empty;
+		return TRUE;
+	}
+
+	/* add IKE_SA_INIT at the end of the struct so it gets freed with it */
+	INIT_EXTRA(sign, ike_sa_init.len,
+		 .isa_id = this->isa_ctx_id,
+	);
+	memcpy(sign->init_message_data, ike_sa_init.ptr, ike_sa_init.len);
+
+	/* store signature info in AUTH octets, which is passed to the private key
+	 * sign() operation */
+	*octets = chunk_create((u_char*)sign, sizeof(sign_info_t) + ike_sa_init.len);
+	return TRUE;
+}
+
+METHOD(keymat_v2_t, get_skd, pseudo_random_function_t,
+	private_tkm_keymat_t *this, chunk_t *skd)
+{
+	isa_info_t *isa_info;
+
+	if (!this->ae_ctx_id)
+	{
+		*skd = chunk_empty;
+		return PRF_UNDEFINED;
+	}
+
+	INIT(isa_info,
+		 .parent_isa_id = this->isa_ctx_id,
+		 .ae_id = this->ae_ctx_id,
+	);
+
+	*skd = chunk_create((u_char *)isa_info, sizeof(isa_info_t));
+
+	return PRF_HMAC_SHA2_512;
+}
+
+METHOD(keymat_v2_t, get_psk_sig, bool,
+	private_tkm_keymat_t *this, bool verify, chunk_t ike_sa_init, chunk_t nonce,
+	chunk_t int_auth, chunk_t secret, chunk_t ppk, identification_t *id,
+	char reserved[3], chunk_t *sig)
+{
+	return FALSE;
+}
+
+METHOD(keymat_v2_t, hash_algorithm_supported, bool,
+	private_tkm_keymat_t *this, hash_algorithm_t hash)
+{
+	if (!this->hash_algorithms)
+	{
+		return FALSE;
+	}
+	return this->hash_algorithms->contains(this->hash_algorithms, hash);
+}
+
+METHOD(keymat_v2_t, add_hash_algorithm, void,
+	private_tkm_keymat_t *this, hash_algorithm_t hash)
+{
+	if (!this->hash_algorithms)
+	{
+		this->hash_algorithms = hash_algorithm_set_create();
+	}
+	this->hash_algorithms->add(this->hash_algorithms, hash);
+}
+
+CALLBACK(hash_algorithm_filter, bool,
+	void *ctx, enumerator_t *orig, va_list args)
+{
+	signature_scheme_t *scheme_ptr;
+	hash_algorithm_t hash, *out;
+
+	VA_ARGS_VGET(args, out);
+
+	while (orig->enumerate(orig, &scheme_ptr, NULL))
+	{
+		hash = hasher_from_signature_scheme(*scheme_ptr, NULL);
+		if (hasher_algorithm_for_ikev2(hash))
+		{
+			*out = hash;
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
+METHOD(keymat_v2_t, hash_algorithm_enumerator_create, enumerator_t*,
+	private_tkm_keymat_t *this)
+{
+	return enumerator_create_filter(
+							scheme_map->create_enumerator(scheme_map),
+							hash_algorithm_filter, NULL, NULL);
+}
+
+METHOD(keymat_t, destroy, void,
+	private_tkm_keymat_t *this)
+{
+	if (ike_isa_reset(this->isa_ctx_id) != TKM_OK)
+	{
+		DBG1(DBG_IKE, "failed to reset ISA context %d", this->isa_ctx_id);
+	}
+	tkm->idmgr->release_id(tkm->idmgr, TKM_CTX_ISA, this->isa_ctx_id);
+	/* only reset ae context if set */
+	if (this->ae_ctx_id != 0)
+	{
+		int count;
+		count = tkm->idmgr->release_id(tkm->idmgr, TKM_CTX_AE, this->ae_ctx_id);
+		if (count == 0 && ike_ae_reset(this->ae_ctx_id) != TKM_OK)
+		{
+			DBG1(DBG_IKE, "failed to reset AE context %d", this->ae_ctx_id);
+		}
+	}
+
+	DESTROY_IF(this->hash_algorithms);
+	DESTROY_IF(this->aead);
+	chunk_free(&this->auth_payload);
+	chunk_free(&this->other_init_msg);
+	free(this);
+}
+
+METHOD(tkm_keymat_t, get_isa_id, isa_id_type,
+	private_tkm_keymat_t *this)
+{
+	return this->isa_ctx_id;
+}
+
+METHOD(tkm_keymat_t, set_auth_payload, void,
+	private_tkm_keymat_t *this, const auth_method_t method,
+	const chunk_t * const payload)
+{
+	this->auth_method = method;
+	this->auth_payload = chunk_clone(*payload);
+}
+
+METHOD(tkm_keymat_t, get_auth_payload, chunk_t,
+	private_tkm_keymat_t *this, auth_method_t *method)
+{
+	if (method)
+	{
+		*method = this->auth_method;
+	}
+	return this->auth_payload;
+}
+
+METHOD(tkm_keymat_t, get_peer_init_msg, chunk_t*,
+	private_tkm_keymat_t *this)
+{
+	return &this->other_init_msg;
+}
+
+/**
+ * Init proposal mappings for a specific protocol
+ */
+static int init_proposal_map(array_t *map, protocol_id_t proto)
+{
+	enumerator_t *enumerator;
+	entry_t entry;
+	char *id_str, *proposal_str;
+
+	enumerator = lib->settings->create_key_value_enumerator(lib->settings,
+											"%s.proposal_mapping.%N", lib->ns,
+											protocol_id_lower_names, proto);
+
+	while (enumerator->enumerate(enumerator, &id_str, &proposal_str))
+	{
+		entry.proposal = proposal_create_from_string_unchecked(proto,
+															   proposal_str);
+		if (!entry.proposal)
+		{
+			enumerator->destroy(enumerator);
+			return FALSE;
+		}
+		entry.id = settings_value_as_uint64(id_str, 0);
+		array_insert(map, ARRAY_TAIL, &entry);
+	}
+	enumerator->destroy(enumerator);
+
+	if (!array_count(map))
+	{
+		return FALSE;
+	}
+	return TRUE;
+}
+
+/*
+ * Described in header
+ */
+int register_proposal_mapping()
+{
+	ike_proposal_map = array_create(sizeof(entry_t), 4);
+	esp_proposal_map = array_create(sizeof(entry_t), 4);
+
+	if (!init_proposal_map(ike_proposal_map, PROTO_IKE) ||
+		!init_proposal_map(esp_proposal_map, PROTO_ESP))
+	{
+		return 0;
+	}
+	return array_count(ike_proposal_map) + array_count(esp_proposal_map);
+}
+
+/**
+ * Destroy given proposal mappings
+ */
+static void destroy_proposal_map(array_t *map)
+{
+	entry_t entry;
+
+	while (array_remove(map, ARRAY_HEAD, &entry))
+	{
+		entry.proposal->destroy(entry.proposal);
+	}
+	array_destroy(map);
+}
+
+/*
+ * Described in header
+ */
+void destroy_proposal_mapping()
+{
+	destroy_proposal_map(ike_proposal_map);
+	destroy_proposal_map(esp_proposal_map);
+	ike_proposal_map = NULL;
+	esp_proposal_map = NULL;
+}
+
+static u_int hash(void *key)
+{
+	signature_scheme_t s = *(signature_scheme_t*)key;
+	return chunk_hash(chunk_from_thing(s));
+}
+
+static bool equals(void *key, void *other_key)
+{
+	return *(signature_scheme_t*)key == *(signature_scheme_t*)other_key;
+}
+
+/**
+ * Destroy a mapping hashtable and all its key/value pairs
+ */
+static void destroy_map(hashtable_t *map)
+{
+	enumerator_t *enumerator;
+	char *key, *value;
+
+	enumerator = map->create_enumerator(map);
+	while (enumerator->enumerate(enumerator, &key, &value))
+	{
+		free(key);
+		free(value);
+	}
+	enumerator->destroy(enumerator);
+	map->destroy(map);
+}
+
+/*
+ * Described in header
+ */
+uint64_t siga_from_signature_scheme(signature_scheme_t scheme)
+{
+	uint64_t *siga_id_ptr = NULL;
+
+	if (scheme_map)
+	{
+		siga_id_ptr = scheme_map->get(scheme_map, &scheme);
+	}
+	return siga_id_ptr ? *siga_id_ptr : 0;
+}
+
+/*
+ * Described in header
+ */
+int register_sig_mapping()
+{
+	int count;
+	char *sig_id_str, *tkm_id_str;
+	signature_scheme_t scheme, *sig_id;
+	uint64_t id, *tkm_id;
+	hashtable_t *map;
+	enumerator_t *enumerator;
+	bool valid = TRUE;
+
+	map = hashtable_create((hashtable_hash_t)hash,
+						   (hashtable_equals_t)equals, 16);
+
+	enumerator = lib->settings->create_key_value_enumerator(lib->settings,
+															"%s.sig_mapping",
+															lib->ns);
+
+	while (enumerator->enumerate(enumerator, &sig_id_str, &tkm_id_str))
+	{
+		if (!enum_from_name(signature_scheme_names, sig_id_str, &scheme))
+		{
+			DBG1(DBG_CFG, "unknown signature scheme: '%s'", sig_id_str);
+			valid = FALSE;
+			break;
+		}
+		if (map->get(map, &scheme))
+		{
+			DBG1(DBG_CFG, "duplicate signature scheme mapping for %N",
+				 signature_scheme_names, scheme);
+			valid = FALSE;
+			break;
+		}
+		id = settings_value_as_uint64(tkm_id_str, 0);
+		if (!id)
+		{
+			DBG1(DBG_CFG, "invalid TKM signature identifier: '%s'", tkm_id_str);
+			valid = FALSE;
+			break;
+		}
+
+		sig_id = malloc_thing(signature_scheme_t);
+		*sig_id = scheme;
+		tkm_id = malloc_thing(uint64_t);
+		*tkm_id = id;
+
+		map->put(map, sig_id, tkm_id);
+	}
+	enumerator->destroy(enumerator);
+
+	count = map->get_count(map);
+
+	if (valid && count > 0)
+	{
+		scheme_map = map;
+		return count;
+	}
+	destroy_map(map);
+	return 0;
+}
+
+/*
+ * Described in header
+ */
+void destroy_sig_mapping()
+{
+	if (scheme_map)
+	{
+		destroy_map(scheme_map);
+		scheme_map = NULL;
+	}
+}
+
+/*
+ * Described in header
+ */
+tkm_keymat_t *tkm_keymat_create(bool initiator)
+{
+	private_tkm_keymat_t *this;
+
+	INIT(this,
+		.public = {
+			.keymat_v2 = {
+				.keymat = {
+					.get_version = _get_version,
+					.create_ke = _create_ke,
+					.create_nonce_gen = _create_nonce_gen,
+					.get_aead = _get_aead,
+					.destroy = _destroy,
+				},
+				.derive_ike_keys = _derive_ike_keys,
+				.derive_ike_keys_ppk = (void*)return_false,
+				.derive_child_keys = _derive_child_keys,
+				.get_skd = _get_skd,
+				.get_int_auth = _get_int_auth,
+				.get_auth_octets = _get_auth_octets,
+				.get_psk_sig = _get_psk_sig,
+				.add_hash_algorithm = _add_hash_algorithm,
+				.hash_algorithm_supported = _hash_algorithm_supported,
+				.hash_algorithm_enumerator_create = _hash_algorithm_enumerator_create,
+			},
+			.get_isa_id = _get_isa_id,
+			.set_auth_payload = _set_auth_payload,
+			.get_auth_payload = _get_auth_payload,
+			.get_peer_init_msg = _get_peer_init_msg,
+		},
+		.initiator = initiator,
+		.isa_ctx_id = tkm->idmgr->acquire_id(tkm->idmgr, TKM_CTX_ISA),
+		.ae_ctx_id = 0,
+		.auth_payload = chunk_empty,
+		.other_init_msg = chunk_empty,
+	);
+
+	if (!this->isa_ctx_id)
+	{
+		free(this);
+		return NULL;
+	}
+
+	return &this->public;
+}

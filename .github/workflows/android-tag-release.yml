@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Android version to tag (for example 1.2.0)
+        description: Android version to tag (for example 1.3.1)
         required: true
         type: string
       device_validation_passed:
@@ -20,7 +20,7 @@ jobs:
   tag:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
 
     steps:
       - name: Check out main with full history
@@ -67,6 +67,13 @@ jobs:
           distribution: temurin
           java-version: "25"
           cache: gradle
+
+      - name: Install strongSwan Android build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y autoconf automake libtool pkg-config flex bison gperf jq libssl-dev
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;27.3.13750724"
 
       - name: Validate release source
         run: ./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug

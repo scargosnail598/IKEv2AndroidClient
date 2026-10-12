@@ -7,7 +7,23 @@ pluginManagement {
         }
     }
     repositories {
-        google()
+        // Fallback for networks where dl.google.com is unavailable. Versions
+        // remain pinned in the build files.
+        maven("https://maven.aliyun.com/repository/google") {
+            name = "GoogleMirror"
+            content {
+                includeGroupByRegex("com\\.android.*")
+                includeGroupByRegex("androidx\\..*")
+                includeGroupByRegex("com\\.google.*")
+            }
+        }
+        google {
+            content {
+                includeGroupByRegex("com\\.android.*")
+                includeGroupByRegex("androidx\\..*")
+                includeGroupByRegex("com\\.google.*")
+            }
+        }
         mavenCentral()
         gradlePluginPortal()
     }
@@ -16,7 +32,21 @@ pluginManagement {
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
-        google()
+        maven("https://maven.aliyun.com/repository/google") {
+            name = "GoogleMirror"
+            content {
+                includeGroupByRegex("com\\.android.*")
+                includeGroupByRegex("androidx\\..*")
+                includeGroupByRegex("com\\.google.*")
+            }
+        }
+        google {
+            content {
+                includeGroupByRegex("com\\.android.*")
+                includeGroupByRegex("androidx\\..*")
+                includeGroupByRegex("com\\.google.*")
+            }
+        }
         mavenCentral()
     }
 }

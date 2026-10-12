@@ -99,13 +99,13 @@ class IkevProfileParser(
         if (version > SUPPORTED_FORMAT_VERSION) {
             throw IkevProfileImportException(
                 "This profile uses .ikev format version $version.\n" +
-                    "Android client v1.2.0 supports version 1 only.",
+                    "Android client v1.3.0 supports version 1 only.",
             )
         }
         if (version != SUPPORTED_FORMAT_VERSION.toLong()) {
             throw IkevProfileImportException(
                 "Unsupported .ikev format version: $version.\n" +
-                    "Android client v1.2.0 supports version 1 only.",
+                    "Android client v1.3.0 supports version 1 only.",
             )
         }
 
@@ -122,7 +122,7 @@ class IkevProfileParser(
         if (remoteId != server) {
             throw IkevProfileImportException(
                 "This .ikev profile uses a Remote ID different from the server address.\n" +
-                    "Android client v1.2.0 cannot safely represent that profile.",
+                    "Android client v1.3.0 cannot safely represent that profile.",
             )
         }
 

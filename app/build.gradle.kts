@@ -52,6 +52,12 @@ val missingReleaseSigningVariables = if (releaseArtifactRequested) {
     emptyList()
 }
 
+val prepareStrongSwan by tasks.registering(Exec::class) {
+    group = "build setup"
+    description = "Prepares strongSwan and builds its Android OpenSSL library."
+    commandLine("bash", rootProject.file("scripts/prepare-strongswan-android.sh").absolutePath)
+}
+
 if (releaseArtifactRequested && missingReleaseSigningVariables.isNotEmpty()) {
     throw GradleException(
         "A signed release was requested, but these environment variables are missing: " +
@@ -72,17 +78,33 @@ if (
 }
 
 android {
-    namespace = "com.saeed.ikev2vpn"
+    namespace = "org.strongswan.android"
     compileSdk = 36
 
     defaultConfig {
         applicationId = "com.saeed.ikev2vpn"
         minSdk = 30
         targetSdk = 36
-        versionCode = 3
-        versionName = "1.2.0"
+        versionCode = 5
+        versionName = "1.3.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    ndkVersion = "27.3.13750724"
+
+    externalNativeBuild {
+        ndkBuild {
+            path = file("$rootDir/third_party/strongswan/src/frontends/android/app/src/main/jni/Android.mk")
+        }
+    }
+
+    sourceSets {
+        getByName("main") {
+            val strongSwanFrontend = rootProject.file("third_party/strongswan/src/frontends/android/app/src/main")
+            java.srcDir(strongSwanFrontend.resolve("java"))
+            res.srcDir(strongSwanFrontend.resolve("res"))
+        }
     }
 
     signingConfigs {
@@ -125,6 +147,16 @@ android {
     lint {
         abortOnError = true
         checkReleaseBuilds = true
+    }
+}
+
+tasks.named("preBuild").configure {
+    dependsOn(prepareStrongSwan)
+}
+
+tasks.configureEach {
+    if (name.startsWith("configureNdkBuild") || name.startsWith("externalNativeBuild")) {
+        dependsOn(prepareStrongSwan)
     }
 }
 
@@ -172,6 +204,12 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.10.0")
     implementation("androidx.datastore:datastore-preferences:1.2.1")
+    implementation("androidx.appcompat:appcompat:1.7.1")
+    implementation("androidx.core:core:1.17.0")
+    implementation("androidx.lifecycle:lifecycle-process:2.9.4")
+    implementation("androidx.preference:preference:1.2.1")
+    implementation("androidx.localbroadcastmanager:localbroadcastmanager:1.1.0")
+    implementation("com.google.android.material:material:1.13.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 

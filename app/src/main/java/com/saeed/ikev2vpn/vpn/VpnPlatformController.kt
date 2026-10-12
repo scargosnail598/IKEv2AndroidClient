@@ -19,4 +19,6 @@ interface VpnPlatformController {
     fun disconnect(): VpnResult<Unit>
     fun deleteProvisionedProfile(): VpnResult<Unit>
     fun refreshState()
+    fun clearEventLog() = Unit
+    fun clearTransientSecrets() = Unit
 }

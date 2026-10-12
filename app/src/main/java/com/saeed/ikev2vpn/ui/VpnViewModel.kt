@@ -56,6 +56,7 @@ class VpnViewModel(
     private var initialNavigationComplete = false
     private var setupImportGeneration = 0
     private var consentRequestActive = false
+    private val persistedConnectionEventKeys = mutableSetOf<String>()
 
     val uiState: StateFlow<VpnUiState> = mutableUiState.asStateFlow()
     val effects = effectChannel.receiveAsFlow()
@@ -66,6 +67,7 @@ class VpnViewModel(
         }
         viewModelScope.launch {
             vpnController.state.collect { platformState ->
+                persistNewConnectionEvents(platformState.events)
                 val configured = latestSnapshot.profile?.status == ProvisioningStatus.PROVISIONED &&
                     latestSnapshot.pendingProfile == null
                 mutableUiState.update { current ->
@@ -76,6 +78,10 @@ class VpnViewModel(
                             stateEvidence = StateEvidence.NONE,
                             stateConfirmed = false,
                             stateDetail = "Provision the profile before connecting.",
+                            connectionEvents = mergeConnectionEvents(
+                                latestSnapshot.diagnostics.connectionEvents,
+                                platformState.events,
+                            ),
                         )
                     } else {
                         current.copy(
@@ -84,7 +90,10 @@ class VpnViewModel(
                             stateEvidence = platformState.evidence,
                             stateConfirmed = platformState.confirmed,
                             stateDetail = platformState.detail,
-                            connectionEvents = platformState.events,
+                            connectionEvents = mergeConnectionEvents(
+                                latestSnapshot.diagnostics.connectionEvents,
+                                platformState.events,
+                            ),
                             sessionId = platformState.sessionId ?: current.sessionId,
                             error = platformState.error,
                             technicalError = if (platformState.error == null) {
@@ -221,8 +230,8 @@ class VpnViewModel(
         }
         if (!vpnController.isPlatformSupported()) {
             showError(
-                "The device does not support Android platform IKEv2 VPN profiles.",
-                "PackageManager.FEATURE_IPSEC_TUNNELS is absent.",
+                "The device does not support strongSwan VPN tunnels.",
+                "The bundled strongSwan VPN engine is unavailable on this device.",
             )
             return
         }
@@ -321,9 +330,10 @@ class VpnViewModel(
                     )
                 }
             } else {
+                vpnController.clearTransientSecrets()
                 abortStagedProvision(
                     userMessage = "VPN permission was denied.",
-                    technical = "Android VPN consent activity returned a non-success result.",
+                    technical = "strongSwan VPN consent activity returned a non-success result.",
                     platformProfileReplaced = true,
                 )
             }
@@ -347,6 +357,7 @@ class VpnViewModel(
     }
 
     fun disconnect() {
+        vpnController.clearTransientSecrets()
         when (val result = vpnController.disconnect()) {
             is VpnResult.Success -> Unit
             is VpnResult.Failure -> {
@@ -424,6 +435,13 @@ class VpnViewModel(
         mutableUiState.update { it.copy(error = null, technicalError = null) }
     }
 
+    fun clearConnectionLog() {
+        vpnController.clearEventLog()
+        persistedConnectionEventKeys.clear()
+        mutableUiState.update { it.copy(connectionEvents = emptyList()) }
+        viewModelScope.launch { runCatching { profileRepository.clearConnectionEvents() } }
+    }
+
     private fun applyRepositorySnapshot(snapshot: RepositorySnapshot) {
         latestSnapshot = snapshot
         val profile = snapshot.profile
@@ -467,9 +485,34 @@ class VpnViewModel(
                 lastTechnicalError = snapshot.diagnostics.lastTechnicalError,
                 lastErrorTimestamp = snapshot.diagnostics.lastErrorTimestamp,
                 repositoryError = snapshot.diagnostics.repositoryError,
+                connectionEvents = mergeConnectionEvents(
+                    snapshot.diagnostics.connectionEvents,
+                    platformState.events,
+                ),
             )
         }
+        persistedConnectionEventKeys += snapshot.diagnostics.connectionEvents.map(::connectionEventKey)
+        persistNewConnectionEvents(vpnController.state.value.events)
     }
+
+    private fun persistNewConnectionEvents(events: List<com.saeed.ikev2vpn.vpn.VpnLogEntry>) {
+        val newEvents = events.filter { persistedConnectionEventKeys.add(connectionEventKey(it)) }
+        if (newEvents.isNotEmpty()) {
+            viewModelScope.launch { runCatching { profileRepository.recordConnectionEvents(newEvents) } }
+        }
+    }
+
+    private fun connectionEventKey(event: com.saeed.ikev2vpn.vpn.VpnLogEntry): String =
+        "${event.timestamp}|${event.message}|${event.detail.orEmpty()}"
+
+    private fun mergeConnectionEvents(
+        stored: List<com.saeed.ikev2vpn.vpn.VpnLogEntry>,
+        live: List<com.saeed.ikev2vpn.vpn.VpnLogEntry>,
+    ): List<com.saeed.ikev2vpn.vpn.VpnLogEntry> = (stored + live)
+        .associateBy { "${it.timestamp}|${it.message}" }
+        .values
+        .sortedBy { it.timestamp }
+        .takeLast(200)
 
     private suspend fun commitStagedProvision() {
         profileRepository.commitStagedProfile()
@@ -586,7 +629,7 @@ class VpnViewModel(
     private fun proxySummary(proxy: ImportedProxyMetadata): String {
         return if (proxy.enabled) {
             "Proxy Mode available: ${proxy.host}:${proxy.port}\n" +
-                "Android v1.2 currently uses Full Tunnel only."
+                "Android v1.3 currently uses Full Tunnel only."
         } else {
             "Proxy Mode not advertised"
         }

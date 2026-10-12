@@ -106,7 +106,7 @@ fun SetupScreen(
                 )
                 Text(
                     text = "IKEv2 / IPsec with EAP-MSCHAPv2. Import a profile, enter your " +
-                        "password, and let Android handle the connection.",
+                        "password, and connect through strongSwan.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -118,7 +118,7 @@ fun SetupScreen(
 
         if (!state.platformSupported) {
             MessageCard(
-                message = "This device does not support Android platform IKEv2 VPN profiles.",
+                message = "This device does not support strongSwan VPN tunnels.",
                 isError = true,
             )
         }
@@ -333,9 +333,9 @@ private fun PasswordSection(
         Text(
             text = if (importedProfileReady) {
                 "Your imported profile is ready. Enter the VPN password to finish setup. " +
-                    "It is never stored."
+                    "It will be encrypted with Android Keystore."
             } else {
-                "Required to provision this profile. It is never stored."
+                "Required to provision this profile. It will be encrypted with Android Keystore."
             },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,

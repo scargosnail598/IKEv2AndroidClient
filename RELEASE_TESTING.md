@@ -1,7 +1,7 @@
-# Android v1.2.0 Release Testing
+# Android v1.3.1 Release Testing
 
 Complete this checklist against the release candidate before creating
-`android-v1.2.0`. Record only observed results as `PASS`, `FAIL`, or `BLOCKED`;
+`android-v1.3.1`. Record only observed results as `PASS`, `FAIL`, or `BLOCKED`;
 this document is not evidence that any test has already passed.
 
 ## Device record matrix
@@ -20,7 +20,7 @@ review any exception.
 - Use a disposable EAP account and the server's public `ca-cert.cer`.
 - Prepare a valid v1 `.ikev` profile for that account.
 - For public-CA server mode, prepare a public-trust `.ikev` profile and verify
-  that its certificate is trusted by Android's system trust store.
+  that its certificate is trusted by strongSwan's system trust store.
 - Record the device's original public IPv4, DNS behavior, and active network.
 - Verify the signed APK checksum before installation.
 - Capture only sanitized logs and screenshots.
@@ -41,6 +41,8 @@ review any exception.
       system CA validation and the profile provisions without an embedded CA.
 - [ ] Enter the password, select **Save / Provision VPN**, approve Android VPN
       consent, and confirm provisioning succeeds.
+- [ ] Disconnect and reconnect without another password prompt; confirm the
+      stored encrypted credential authenticates successfully.
 - [ ] Reprovision through **Edit Profile** with valid manual configuration and
       the correct public CA.
 - [ ] Deny VPN consent independently; confirm no provisioned state is retained
@@ -48,7 +50,7 @@ review any exception.
 
 ## Connection and network behavior
 
-- [ ] Select **CONNECT**; confirm Connected appears only with Android platform
+- [ ] Select **CONNECT**; confirm Connected appears only with strongSwan service
       evidence and the server reports an established IKEv2 session.
 - [ ] Confirm a virtual IP is assigned and DNS resolves a fresh hostname.
 - [ ] Confirm all IPv4 Internet traffic works and public IPv4 matches the VPN
@@ -102,8 +104,9 @@ Perform each case independently and restore the valid profile afterward:
       and the selection survives relaunch and rotation.
 - [ ] Confirm diagnostics are sanitized and contain no VPN password or complete
       credentials.
-- [ ] Confirm the password is absent from UI state, app-private preference data,
-      files, backups, captured logs, and screenshots after provisioning.
+- [ ] Confirm the plaintext password is absent from UI state, DataStore,
+      backups, captured logs, and screenshots after provisioning; confirm the
+      credential preference contains only ciphertext and an IV.
 
 ## Release sign-off
 
@@ -119,5 +122,5 @@ Perform each case independently and restore the valid profile afterward:
 | APK checksum verified |  |  |
 | Signing key backup verified |  |  |
 
-Do not mark v1.2.0 ready while any required gate has failed or remains
+Do not mark v1.3.1 ready while any required gate has failed or remains
 unexplained. Attach only sanitized evidence and record device-specific quirks.
