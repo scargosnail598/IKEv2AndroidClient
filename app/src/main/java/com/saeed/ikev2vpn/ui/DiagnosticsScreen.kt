@@ -1,5 +1,8 @@
 package com.saeed.ikev2vpn.ui
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.os.Build
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -16,6 +19,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -24,6 +28,7 @@ import java.util.Date
 
 @Composable
 fun DiagnosticsScreen(state: VpnUiState, onBack: () -> Unit) {
+    val context = LocalContext.current
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -74,7 +79,46 @@ fun DiagnosticsScreen(state: VpnUiState, onBack: () -> Unit) {
             } ?: "Unavailable",
         )
         state.repositoryError?.let { DiagnosticRow("Storage warning", it) }
+        HorizontalDivider()
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Connection log", modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
+            TextButton(
+                enabled = state.connectionEvents.isNotEmpty(),
+                onClick = { copyConnectionLog(context, state) },
+            ) { Text("Copy") }
+        }
+        Text(
+            "These are VPN events reported to the app by Android. Android does not expose the full IKE packet log here.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+        )
+        if (state.connectionEvents.isEmpty()) {
+            Text("No connection events yet.", style = MaterialTheme.typography.bodyMedium)
+        } else {
+            state.connectionEvents.asReversed().forEach { event ->
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        DateFormat.getDateTimeInstance().format(Date(event.timestamp)),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    Text(event.message, style = MaterialTheme.typography.bodyMedium)
+                    event.detail?.let {
+                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        }
     }
+}
+
+private fun copyConnectionLog(context: Context, state: VpnUiState) {
+    val text = state.connectionEvents.joinToString("\n") { event ->
+        val timestamp = DateFormat.getDateTimeInstance().format(Date(event.timestamp))
+        "$timestamp ${event.message}" + (event.detail?.let { "\n  $it" } ?: "")
+    }
+    val clipboard = context.getSystemService(ClipboardManager::class.java)
+    clipboard.setPrimaryClip(ClipData.newPlainText("VPN connection log", text))
 }
 
 @Composable

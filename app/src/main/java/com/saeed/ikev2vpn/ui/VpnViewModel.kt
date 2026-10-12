@@ -84,6 +84,7 @@ class VpnViewModel(
                             stateEvidence = platformState.evidence,
                             stateConfirmed = platformState.confirmed,
                             stateDetail = platformState.detail,
+                            connectionEvents = platformState.events,
                             sessionId = platformState.sessionId ?: current.sessionId,
                             error = platformState.error,
                             technicalError = if (platformState.error == null) {

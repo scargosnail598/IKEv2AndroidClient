@@ -25,6 +25,13 @@ data class VpnState(
     val detail: String = "No active VPN session has been confirmed.",
     val sessionId: String? = null,
     val error: String? = null,
+    val events: List<VpnLogEntry> = emptyList(),
+)
+
+data class VpnLogEntry(
+    val timestamp: Long,
+    val message: String,
+    val detail: String? = null,
 )
 
 sealed interface VpnStateEvent {
@@ -50,7 +57,8 @@ sealed interface VpnStateEvent {
 }
 
 object VpnStateReducer {
-    fun reduce(current: VpnState, event: VpnStateEvent): VpnState = when (event) {
+    fun reduce(current: VpnState, event: VpnStateEvent): VpnState {
+        val next = when (event) {
         VpnStateEvent.ConnectRequested -> VpnState(
             connectionState = ConnectionState.CONNECTING,
             evidence = StateEvidence.LOCAL_REQUEST,
@@ -118,6 +126,19 @@ object VpnStateReducer {
             detail = event.userMessage,
             error = event.userMessage,
         )
+        }
+        val message = when (event) {
+            VpnStateEvent.ConnectRequested -> "Connection requested; waiting for Android VPN service."
+            VpnStateEvent.DisconnectRequested -> "Disconnection requested."
+            VpnStateEvent.LocalDisconnectCompleted -> "Disconnected."
+            is VpnStateEvent.Recovering -> "Connection retry: ${event.userMessage}"
+            is VpnStateEvent.ConfirmationTimedOut -> "Timed out: ${event.userMessage}"
+            VpnStateEvent.OwnedNetworkAvailable -> "Android VPN network connected."
+            VpnStateEvent.OwnedNetworkLost -> "Android VPN network disconnected."
+            is VpnStateEvent.PlatformStateObserved -> "Android VPN state: ${event.state}."
+            is VpnStateEvent.Failed -> "VPN error: ${event.userMessage}"
+        }
+        return next.copy(events = (current.events + VpnLogEntry(System.currentTimeMillis(), message)).takeLast(100))
     }
 
     fun shouldApplyPlatformObservation(

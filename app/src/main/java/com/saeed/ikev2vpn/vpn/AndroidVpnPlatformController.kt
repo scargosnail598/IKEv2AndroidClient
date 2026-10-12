@@ -210,13 +210,24 @@ class AndroidVpnPlatformController(context: Context) : VpnPlatformController {
         if (errorClass == VpnManager.ERROR_CLASS_RECOVERABLE) {
             recoverableRetryActive = true
             reduceState(VpnStateEvent.Recovering(userMessage))
+            appendEventDetail(technical)
             pollApi33State(expectDisconnected = false)
             return VpnEventDiagnostic(userMessage, "$technical recoverable=true")
         }
         recoverableRetryActive = false
         transitionJob?.cancel()
         reduceState(VpnStateEvent.Failed(userMessage, StateEvidence.API_33_EVENT, true))
+        appendEventDetail(technical)
         return VpnEventDiagnostic(userMessage, technical)
+    }
+
+    private fun appendEventDetail(detail: String) {
+        mutableState.update { state ->
+            val last = state.events.lastOrNull()
+            if (last == null) state else state.copy(
+                events = (state.events.dropLast(1) + last.copy(detail = detail)).takeLast(100),
+            )
+        }
     }
 
     private fun registerOwnedVpnNetworkCallback() {

@@ -5,6 +5,7 @@ import com.saeed.ikev2vpn.data.ProvisioningStatus
 import com.saeed.ikev2vpn.validation.ProfileField
 import com.saeed.ikev2vpn.vpn.ConnectionState
 import com.saeed.ikev2vpn.vpn.StateEvidence
+import com.saeed.ikev2vpn.vpn.VpnLogEntry
 
 enum class AppScreen {
     SETUP,
@@ -28,6 +29,7 @@ data class VpnUiState(
     val stateEvidence: StateEvidence = StateEvidence.NONE,
     val stateConfirmed: Boolean = false,
     val stateDetail: String = "No VPN profile is configured.",
+    val connectionEvents: List<VpnLogEntry> = emptyList(),
     val platformSupported: Boolean = false,
     val profileName: String = "",
     val serverAddress: String = "",
