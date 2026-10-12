@@ -156,6 +156,128 @@ class VpnViewModelTest {
         assertEquals(0, importerCalls)
     }
 
+    @Test
+    fun `adding a profile preserves the saved profile and creates a distinct identity`() = runTest {
+        val repository = FakeProfileRepository(provisionedSnapshot(testCertificate()))
+        val controller = FakeVpnController()
+        val viewModel = createViewModel(repository, controller)
+        viewModel.addProfile()
+        assertEquals("", viewModel.uiState.value.profileName)
+        assertEquals("Saved VPN", repository.current.profile?.config?.profileName)
+        viewModel.updateProfileName("Second")
+        viewModel.updateServerAddress("second.example.com")
+        viewModel.updateUsername("second-user")
+        assertEquals(0, controller.deleteCalls)
+        viewModel.showMain()
+        assertEquals("Saved VPN", viewModel.uiState.value.profileName)
+    }
+
+    @Test
+    fun `provisioning a new imported profile uses a new identity`() = runTest {
+        val certificate = testCertificate()
+        val repository = FakeProfileRepository(provisionedSnapshot(certificate))
+        val imported = ImportedIkevProfile(VpnProfileConfig("Second", "second.example.com", "second-user"),
+            certificate, "second.example.com", "secure", ImportedProxyMetadata(false))
+        val viewModel = createViewModel(repository, FakeVpnController(), imported)
+        viewModel.addProfile()
+        viewModel.importIkevProfile(mock(Uri::class.java))
+        viewModel.provisionProfile("temporary-password")
+        assertEquals("Second", repository.current.profile?.config?.profileName)
+        assertTrue(repository.current.profile?.config?.id != "legacy")
+        assertFalse(viewModel.uiState.value.toString().contains("temporary-password"))
+    }
+
+    @Test
+    fun `switching profiles activates directly without editing or deleting profiles`() = runTest {
+        val first = provisionedSnapshot(testCertificate()).profile!!
+        val second = StoredProfile(VpnProfileConfig("Second", "second.example.com", "second-user", "second"),
+            null, ProvisioningStatus.NEEDS_REPROVISION)
+        val repository = FakeProfileRepository(RepositorySnapshot(profile = first, profiles = listOf(first, second)))
+        val controller = FakeVpnController()
+        val viewModel = createViewModel(repository, controller)
+        viewModel.selectProfile("second")
+        assertEquals(0, controller.deleteCalls)
+        assertEquals("Second", viewModel.uiState.value.profileName)
+        assertEquals("second", viewModel.uiState.value.selectedProfileId)
+        assertTrue(viewModel.uiState.value.usesPublicCertificateTrust)
+        assertTrue(viewModel.uiState.value.configured)
+        assertEquals(AppScreen.MAIN, viewModel.uiState.value.screen)
+        assertEquals("second", controller.restoredProfile?.id)
+        assertEquals(null, controller.restoredCertificate)
+        viewModel.selectProfile("legacy")
+        assertEquals("Saved VPN", viewModel.uiState.value.profileName)
+        assertEquals("legacy", controller.restoredProfile?.id)
+        assertEquals(first.certificate?.certificate, controller.restoredCertificate)
+    }
+
+    @Test
+    fun `adding and switching profiles are blocked while connected`() = runTest {
+        val first = provisionedSnapshot(testCertificate()).profile!!
+        val second = first.copy(config = first.config.copy(profileName = "Second", id = "second"))
+        val repository = FakeProfileRepository(RepositorySnapshot(profile = first, profiles = listOf(first, second)))
+        val controller = FakeVpnController(VpnState(connectionState = ConnectionState.CONNECTED))
+        val viewModel = createViewModel(repository, controller)
+        viewModel.addProfile()
+        viewModel.selectProfile("second")
+        assertEquals("Saved VPN", viewModel.uiState.value.profileName)
+        assertEquals(0, controller.deleteCalls)
+        assertEquals(null, controller.restoredProfile)
+    }
+
+    @Test
+    fun `selecting current profile leaves main screen and does not reprovision`() = runTest {
+        val repository = FakeProfileRepository(provisionedSnapshot(testCertificate()))
+        val controller = FakeVpnController()
+        val viewModel = createViewModel(repository, controller)
+        viewModel.selectProfile("legacy")
+        assertEquals(AppScreen.MAIN, viewModel.uiState.value.screen)
+        assertEquals(0, controller.provisionCalls)
+        viewModel.showSetup()
+        viewModel.updateProfileName("Unsaved")
+        viewModel.selectProfile("legacy")
+        assertEquals(AppScreen.MAIN, viewModel.uiState.value.screen)
+        assertEquals("Saved VPN", viewModel.uiState.value.profileName)
+    }
+
+    @Test
+    fun `older profile prompts only for password and cancellation keeps active profile`() = runTest {
+        val first = provisionedSnapshot(testCertificate()).profile!!
+        val second = StoredProfile(VpnProfileConfig("Second", "second.example.com", "second-user", "second"),
+            null, ProvisioningStatus.NEEDS_REPROVISION)
+        val repository = FakeProfileRepository(RepositorySnapshot(profile = first, profiles = listOf(first, second)))
+        val controller = FakeVpnController().apply { savedCredentialAvailable = false }
+        val viewModel = createViewModel(repository, controller)
+        viewModel.selectProfile("second")
+        assertEquals("Second", viewModel.uiState.value.credentialPromptProfileName)
+        assertEquals(AppScreen.MAIN, viewModel.uiState.value.screen)
+        assertEquals("legacy", repository.current.profile?.config?.id)
+        viewModel.cancelProfilePassword()
+        assertEquals(null, viewModel.uiState.value.credentialPromptProfileName)
+        assertEquals("legacy", repository.current.profile?.config?.id)
+        viewModel.selectProfile("second")
+        viewModel.submitProfilePassword("secret-second")
+        assertEquals("second", repository.current.profile?.config?.id)
+        assertEquals(AppScreen.MAIN, viewModel.uiState.value.screen)
+        assertFalse(viewModel.uiState.value.toString().contains("secret-second"))
+        assertEquals(0, controller.deleteCalls)
+    }
+
+    @Test
+    fun `failed activation preserves previous selection and stays on main`() = runTest {
+        val first = provisionedSnapshot(testCertificate()).profile!!
+        val second = first.copy(config = first.config.copy(profileName = "Second", id = "second"))
+        val repository = FakeProfileRepository(RepositorySnapshot(profile = first, profiles = listOf(first, second)))
+        val controller = FakeVpnController().apply { restoreFails = true }
+        val viewModel = createViewModel(repository, controller)
+        viewModel.selectProfile("second")
+        assertEquals("legacy", repository.current.profile?.config?.id)
+        assertEquals(null, repository.current.pendingProfile)
+        assertTrue(viewModel.uiState.value.configured)
+        assertFalse(viewModel.uiState.value.isBusy)
+        assertEquals(AppScreen.MAIN, viewModel.uiState.value.screen)
+        assertEquals(0, controller.deleteCalls)
+    }
+
     private fun createViewModel(
         repository: ProfileRepository,
         controller: VpnPlatformController,
@@ -193,6 +315,7 @@ class VpnViewModelTest {
     private class FakeProfileRepository(initial: RepositorySnapshot) : ProfileRepository {
         private val mutableSnapshots = MutableStateFlow(initial)
         override val snapshots: Flow<RepositorySnapshot> = mutableSnapshots
+        val current: RepositorySnapshot get() = mutableSnapshots.value
         var failSave = false
         var saveCalls = 0
 
@@ -203,7 +326,24 @@ class VpnViewModelTest {
         ) {
             saveCalls += 1
             if (failSave) error("Simulated storage failure")
-            mutableSnapshots.value = RepositorySnapshot(StoredProfile(config, certificate, status))
+            val profile = StoredProfile(config, certificate, status)
+            val allProfiles = (current.profiles + listOfNotNull(current.profile)).associateBy { it.config.id }.toMutableMap()
+            allProfiles[config.id] = profile
+            mutableSnapshots.value = current.copy(profile = profile, pendingProfile = null, profiles = allProfiles.values.toList())
+        }
+
+        override suspend fun stageProfile(config: VpnProfileConfig, certificate: LoadedCertificate?) {
+            mutableSnapshots.value = current.copy(pendingProfile = StoredProfile(config, certificate, ProvisioningStatus.PENDING_CONSENT))
+        }
+
+        override suspend fun commitStagedProfile() {
+            val pending = current.pendingProfile ?: error("No pending profile")
+            saveProfile(pending.config, pending.certificate, ProvisioningStatus.PROVISIONED)
+        }
+
+        override suspend fun abortStagedProfile(platformProfileReplaced: Boolean) {
+            mutableSnapshots.value = current.copy(pendingProfile = null,
+                profile = current.profile?.let { if (platformProfileReplaced) it.copy(status = ProvisioningStatus.DRAFT) else it })
         }
 
         override suspend fun setProvisioningStatus(status: ProvisioningStatus) {
@@ -232,6 +372,18 @@ class VpnViewModelTest {
         override val state = mutableState
         var deleteCalls = 0
         var provisionCalls = 0
+        var savedCredentialAvailable = true
+        var restoreFails = false
+        var restoredProfile: VpnProfileConfig? = null
+        var restoredCertificate: X509Certificate? = null
+
+        override fun hasSavedCredential(profileId: String) = savedCredentialAvailable
+        override fun restoreProfile(config: VpnProfileConfig, serverRootCa: X509Certificate?): VpnResult<ProvisioningAction> {
+            restoredProfile = config
+            restoredCertificate = serverRootCa
+            return if (restoreFails) VpnResult.Failure("Could not activate profile", "Simulated restore failure")
+            else VpnResult.Success(ProvisioningAction.Complete)
+        }
 
         override fun isPlatformSupported(): Boolean = true
 

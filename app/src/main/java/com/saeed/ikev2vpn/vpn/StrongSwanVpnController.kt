@@ -73,6 +73,22 @@ class StrongSwanVpnController(context: Context) : VpnPlatformController {
 
     override fun isPlatformSupported(): Boolean = true
 
+    override fun retainCurrentCredential(profileId: String) {
+        credentialStore.load()?.let { credentialStore.save(it, profileId) }
+    }
+
+    override fun hasSavedCredential(profileId: String): Boolean = credentialStore.load(profileId) != null
+
+    override fun restoreProfile(config: VpnProfileConfig, serverRootCa: X509Certificate?): VpnResult<ProvisioningAction> {
+        return try {
+            val password = credentialStore.load(config.id)
+                ?: return VpnResult.Failure("Enter the password for this profile.", "The selected profile has no saved credential.")
+            provision(config, password, serverRootCa)
+        } catch (exception: Exception) {
+            fail("The saved profile could not be restored.", exception)
+        }
+    }
+
     override fun provision(
         config: VpnProfileConfig,
         password: String,
@@ -80,16 +96,18 @@ class StrongSwanVpnController(context: Context) : VpnPlatformController {
     ): VpnResult<ProvisioningAction> {
         var previousCredential: String? = null
         var credentialUpdated = false
+        var previousProfileCredential: String? = null
         return try {
             previousCredential = credentialStore.load()
+            previousProfileCredential = credentialStore.load(config.id)
             credentialStore.save(password)
             credentialUpdated = true
+            credentialStore.save(password, config.id)
             val profileId = activeProfileId
             val source = VpnProfileSource(appContext).open()
             try {
                 val previous = source.getVpnProfile(profileId)
                 val profile = previous ?: VpnProfile().apply { setUUID(profileId) }
-                val previousCertificateAlias = profile.certificateAlias
                 val certificateAlias = serverRootCa?.let(::installLocalTrustAnchor)
 
                 profile.name = config.profileName
@@ -106,19 +124,10 @@ class StrongSwanVpnController(context: Context) : VpnPlatformController {
                 val stored = if (previous == null) {
                     source.insertProfile(profile)
                 } else {
-                    if (previousCertificateAlias?.startsWith("local:") == true &&
-                        previousCertificateAlias != certificateAlias
-                    ) {
-                        LocalCertificateStore().deleteCertificate(previousCertificateAlias)
-                        TrustedCertificateManager.getInstance().reset()
-                    }
                     if (source.updateVpnProfile(profile)) profile else null
                 }
                 if (stored == null) {
-                    return VpnResult.Failure(
-                        "The strongSwan VPN profile could not be saved.",
-                        "The strongSwan profile data source did not insert or update the profile.",
-                    )
+                    throw IllegalStateException("The strongSwan profile data source did not insert or update the profile.")
                 }
             } finally {
                 source.close()
@@ -129,7 +138,8 @@ class StrongSwanVpnController(context: Context) : VpnPlatformController {
         } catch (exception: Exception) {
             val rollbackFailure = if (credentialUpdated) {
                 runCatching {
-                    previousCredential?.let(credentialStore::save) ?: credentialStore.clear()
+                    previousCredential?.let { credentialStore.save(it) } ?: credentialStore.clear()
+                    previousProfileCredential?.let { credentialStore.save(it, config.id) } ?: credentialStore.clear(config.id)
                 }.exceptionOrNull()
             } else {
                 null

@@ -15,6 +15,11 @@ interface VpnPlatformController {
         serverRootCa: X509Certificate?,
     ): VpnResult<ProvisioningAction>
 
+    fun retainCurrentCredential(profileId: String) = Unit
+    fun hasSavedCredential(profileId: String): Boolean = false
+    fun restoreProfile(config: VpnProfileConfig, serverRootCa: X509Certificate?): VpnResult<ProvisioningAction> =
+        VpnResult.Failure("Enter the password for this profile.", "No saved profile credential is available.")
+
     fun connect(): VpnResult<String?>
     fun disconnect(): VpnResult<Unit>
     fun deleteProvisionedProfile(): VpnResult<Unit>

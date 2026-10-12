@@ -3,6 +3,7 @@ package com.saeed.ikev2vpn.profile
 import android.content.ContentResolver
 import android.net.Uri
 import com.saeed.ikev2vpn.certificate.CertificateLoader
+import com.saeed.ikev2vpn.certificate.CertificateLoadException
 import com.saeed.ikev2vpn.certificate.LoadedCertificate
 import com.saeed.ikev2vpn.data.VpnProfileConfig
 import com.saeed.ikev2vpn.validation.ProfileValidator
@@ -172,7 +173,16 @@ class IkevProfileParser(
             } catch (exception: IllegalArgumentException) {
                 throw IkevProfileImportException("The embedded CA certificate is invalid.", exception)
             }
-            val loaded = certificateLoader.load(certificateBytes)
+            val loaded = try {
+                certificateLoader.load(certificateBytes)
+            } catch (exception: CertificateLoadException) {
+                val message = if (exception.message == "The selected certificate is not a CA certificate.") {
+                    "The embedded certificate is not a CA certificate."
+                } else {
+                    exception.message
+                }
+                throw IkevProfileImportException(message, exception)
+            }
             if (!certificateBytes.contentEquals(loaded.derBytes)) {
                 throw IkevProfileImportException("The embedded CA certificate is invalid.")
             }

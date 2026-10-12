@@ -1,5 +1,8 @@
 package com.saeed.ikev2vpn.data
 
+import org.json.JSONArray
+import org.json.JSONObject
+import androidx.datastore.preferences.core.mutablePreferencesOf
 import android.content.Context
 import android.util.Base64
 import android.util.AtomicFile
@@ -13,6 +16,7 @@ import com.saeed.ikev2vpn.certificate.LoadedCertificate
 import com.saeed.ikev2vpn.diagnostics.DiagnosticSanitizer
 import com.saeed.ikev2vpn.vpn.VpnLogEntry
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.flowOn
@@ -41,6 +45,7 @@ data class RepositorySnapshot(
     val profile: StoredProfile? = null,
     val pendingProfile: StoredProfile? = null,
     val diagnostics: StoredDiagnostics = StoredDiagnostics(),
+    val profiles: List<StoredProfile> = emptyList(),
 )
 
 interface ProfileRepository {
@@ -92,6 +97,8 @@ class DataStoreProfileRepository(
     ) {
         certificate?.let { saveCertificate(it) }
         applicationContext.profileDataStore.edit { preferences ->
+            archiveCurrent(preferences, config.id)
+            preferences[PROFILE_ID] = config.id
             preferences[PROFILE_NAME] = config.profileName
             preferences[SERVER_ADDRESS] = config.serverAddress
             preferences[USERNAME] = config.username
@@ -111,6 +118,7 @@ class DataStoreProfileRepository(
         certificate?.info?.sha256Fingerprint?.let(activeFingerprints::add)
         applicationContext.profileDataStore.edit { preferences ->
             preferences[CERTIFICATE_FINGERPRINT]?.let(activeFingerprints::add)
+            preferences[PENDING_PROFILE_ID] = config.id
             preferences[PENDING_PROFILE_NAME] = config.profileName
             preferences[PENDING_SERVER_ADDRESS] = config.serverAddress
             preferences[PENDING_USERNAME] = config.username
@@ -124,6 +132,8 @@ class DataStoreProfileRepository(
         applicationContext.profileDataStore.edit { preferences ->
             val pending = pendingValues(preferences)
                 ?: throw IOException("No staged VPN profile is available to commit.")
+            archiveCurrent(preferences, pending.config.id)
+            preferences[PROFILE_ID] = pending.config.id
             preferences[PROFILE_NAME] = pending.config.profileName
             preferences[SERVER_ADDRESS] = pending.config.serverAddress
             preferences[USERNAME] = pending.config.username
@@ -147,6 +157,7 @@ class DataStoreProfileRepository(
                     preferences[STATUS] = ProvisioningStatus.NEEDS_REPROVISION.name
                 }
             } else {
+                preferences[PROFILE_ID] = pending.config.id
                 preferences[PROFILE_NAME] = pending.config.profileName
                 preferences[SERVER_ADDRESS] = pending.config.serverAddress
                 preferences[USERNAME] = pending.config.username
@@ -213,6 +224,37 @@ class DataStoreProfileRepository(
         applicationContext.profileDataStore.edit { preferences -> preferences.remove(CONNECTION_EVENTS) }
     }
 
+    private fun archivedProfiles(preferences: Preferences): List<Preferences> {
+        val entries = JSONArray(preferences[ARCHIVED_PROFILES] ?: "[]")
+        return (0 until entries.length()).map { index ->
+            val entry = entries.getJSONObject(index)
+            mutablePreferencesOf().apply {
+                listOf(PROFILE_ID, PROFILE_NAME, SERVER_ADDRESS, USERNAME, CERTIFICATE_FINGERPRINT).forEach { key ->
+                    if (entry.has(key.name)) this[key] = entry.getString(key.name)
+                }
+                this[STATUS] = ProvisioningStatus.NEEDS_REPROVISION.name
+            }
+        }
+    }
+
+    private fun archiveCurrent(preferences: androidx.datastore.preferences.core.MutablePreferences, targetId: String) {
+        val archived = archivedProfiles(preferences).filter { it[PROFILE_ID] != targetId }.toMutableList()
+        val currentId = preferences[PROFILE_ID] ?: "legacy"
+        if (committedValues(preferences) != null && currentId != targetId) {
+            archived.removeAll { it[PROFILE_ID] == currentId }
+            archived += preferences.toMutablePreferences().apply { this[PROFILE_ID] = currentId }
+        }
+        val entries = JSONArray()
+        archived.forEach { profile ->
+            entries.put(JSONObject().apply {
+                listOf(PROFILE_ID, PROFILE_NAME, SERVER_ADDRESS, USERNAME, CERTIFICATE_FINGERPRINT).forEach { key ->
+                    profile[key]?.let { put(key.name, it) }
+                }
+            })
+        }
+        preferences[ARCHIVED_PROFILES] = entries.toString()
+    }
+
     private fun toSnapshot(preferences: Preferences): RepositorySnapshot {
         var diagnostics = StoredDiagnostics(
             lastError = preferences[LAST_ERROR],
@@ -230,6 +272,7 @@ class DataStoreProfileRepository(
             profile = committed.profile,
             pendingProfile = pending.profile,
             diagnostics = diagnostics,
+            profiles = listOfNotNull(committed.profile) + archivedProfiles(preferences).mapNotNull { loadProfile(it, false).profile },
         )
     }
 
@@ -279,7 +322,7 @@ class DataStoreProfileRepository(
             }.getOrDefault(ProvisioningStatus.DRAFT)
         }
         return ProfileLoadResult(
-            profile = StoredProfile(values.config, certificate, status),
+            profile = StoredProfile(values.config.copy(id = preferences[if (pending) PENDING_PROFILE_ID else PROFILE_ID] ?: "legacy"), certificate, status),
         )
     }
 
@@ -288,6 +331,7 @@ class DataStoreProfileRepository(
         preferences[SERVER_ADDRESS],
         preferences[USERNAME],
         preferences[CERTIFICATE_FINGERPRINT],
+        preferences[PROFILE_ID] ?: "legacy",
     )
 
     private fun pendingValues(preferences: Preferences): ProfileValues? = profileValues(
@@ -295,6 +339,7 @@ class DataStoreProfileRepository(
         preferences[PENDING_SERVER_ADDRESS],
         preferences[PENDING_USERNAME],
         preferences[PENDING_CERTIFICATE_FINGERPRINT],
+        preferences[PENDING_PROFILE_ID] ?: "legacy",
     )
 
     private fun profileValues(
@@ -302,17 +347,19 @@ class DataStoreProfileRepository(
         serverAddress: String?,
         username: String?,
         certificateFingerprint: String?,
+        id: String,
     ): ProfileValues? {
         if (profileName == null || serverAddress == null || username == null) {
             return null
         }
         return ProfileValues(
-            config = VpnProfileConfig(profileName, serverAddress, username),
+            config = VpnProfileConfig(profileName, serverAddress, username, id),
             certificateFingerprint = certificateFingerprint,
         )
     }
 
     private fun removePendingValues(preferences: androidx.datastore.preferences.core.MutablePreferences) {
+        preferences.remove(PENDING_PROFILE_ID)
         preferences.remove(PENDING_PROFILE_NAME)
         preferences.remove(PENDING_SERVER_ADDRESS)
         preferences.remove(PENDING_USERNAME)
@@ -361,7 +408,8 @@ class DataStoreProfileRepository(
     }
 
     private suspend fun removeUnreferencedCertificatesForFingerprints(fingerprints: Set<String>) {
-        val activeFiles = fingerprints.mapNotNull(::certificateFileForFingerprint)
+        val archivedFingerprints = archivedProfiles(applicationContext.profileDataStore.data.first()).mapNotNull { it[CERTIFICATE_FINGERPRINT] }
+        val activeFiles = (fingerprints + archivedFingerprints).mapNotNull(::certificateFileForFingerprint)
             .map { it.baseFile }
             .toSet()
         withContext(Dispatchers.IO) {
@@ -412,6 +460,9 @@ class DataStoreProfileRepository(
         const val CERTIFICATE_FILE_PREFIX = "vpn_ca_"
         const val MAX_STORED_CONNECTION_EVENTS = 200
         val HEX_SHA_256 = Regex("[0-9A-F]{64}")
+        val ARCHIVED_PROFILES = stringPreferencesKey("archived_profiles")
+        val PROFILE_ID = stringPreferencesKey("profile_id")
+        val PENDING_PROFILE_ID = stringPreferencesKey("pending_profile_id")
         val PROFILE_NAME = stringPreferencesKey("profile_name")
         val SERVER_ADDRESS = stringPreferencesKey("server_address")
         val USERNAME = stringPreferencesKey("username")

@@ -4,6 +4,7 @@ data class VpnProfileConfig(
     val profileName: String,
     val serverAddress: String,
     val username: String,
+    val id: String = "legacy",
 )
 
 enum class ProvisioningStatus {

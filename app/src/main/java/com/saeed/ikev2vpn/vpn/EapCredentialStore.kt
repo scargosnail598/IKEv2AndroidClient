@@ -1,7 +1,7 @@
 package com.saeed.ikev2vpn.vpn
 
 import android.content.Context
-import android.util.Base64
+import java.util.Base64
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import java.security.KeyStore
@@ -11,54 +11,59 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
 /** Stores the EAP password encrypted with an app-specific Android Keystore key. */
-class EapCredentialStore(context: Context) {
+class EapCredentialStore(
+    context: Context,
+    private val keyProvider: (() -> SecretKey)? = null,
+) {
     private val preferences = context.applicationContext.getSharedPreferences(
         PREFERENCES_NAME,
         Context.MODE_PRIVATE,
     )
 
     @Synchronized
-    fun save(password: String) {
+    fun save(password: String, profileId: String? = null) {
         require(password.isNotEmpty()) { "The EAP password must not be empty." }
         val cipher = Cipher.getInstance(TRANSFORMATION)
-        cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey())
+        cipher.init(Cipher.ENCRYPT_MODE, keyProvider?.invoke() ?: getOrCreateKey())
         val ciphertext = cipher.doFinal(password.toByteArray(Charsets.UTF_8))
         check(
             preferences.edit()
-                .putString(KEY_IV, Base64.encodeToString(cipher.iv, Base64.NO_WRAP))
-                .putString(KEY_CIPHERTEXT, Base64.encodeToString(ciphertext, Base64.NO_WRAP))
+                .putString(key(KEY_IV, profileId), Base64.getEncoder().encodeToString(cipher.iv))
+                .putString(key(KEY_CIPHERTEXT, profileId), Base64.getEncoder().encodeToString(ciphertext))
                 .commit(),
         ) { "The encrypted EAP credential could not be saved." }
     }
 
     @Synchronized
-    fun load(): String? {
-        val encodedIv = preferences.getString(KEY_IV, null)
-        val encodedCiphertext = preferences.getString(KEY_CIPHERTEXT, null)
+    fun load(profileId: String? = null): String? {
+        val encodedIv = preferences.getString(key(KEY_IV, profileId), null)
+        val encodedCiphertext = preferences.getString(key(KEY_CIPHERTEXT, profileId), null)
         if (encodedIv == null && encodedCiphertext == null) return null
         check(encodedIv != null && encodedCiphertext != null) {
             "The encrypted EAP credential is incomplete. Save the profile again."
         }
 
-        val keyStore = loadKeyStore()
-        val key = keyStore.getKey(KEY_ALIAS, null) as? SecretKey
-            ?: error("The Android Keystore key is unavailable. Save the profile again.")
+        val key = keyProvider?.invoke() ?: (loadKeyStore().getKey(KEY_ALIAS, null) as? SecretKey
+            ?: error("The Android Keystore key is unavailable. Save the profile again."))
         val cipher = Cipher.getInstance(TRANSFORMATION)
         cipher.init(
             Cipher.DECRYPT_MODE,
             key,
-            GCMParameterSpec(GCM_TAG_LENGTH_BITS, Base64.decode(encodedIv, Base64.NO_WRAP)),
+            GCMParameterSpec(GCM_TAG_LENGTH_BITS, Base64.getDecoder().decode(encodedIv)),
         )
-        return cipher.doFinal(Base64.decode(encodedCiphertext, Base64.NO_WRAP))
+        return cipher.doFinal(Base64.getDecoder().decode(encodedCiphertext))
             .toString(Charsets.UTF_8)
     }
 
     @Synchronized
-    fun clear() {
-        check(preferences.edit().clear().commit()) {
+    fun clear(profileId: String? = null) {
+        check(preferences.edit().remove(key(KEY_IV, profileId)).remove(key(KEY_CIPHERTEXT, profileId)).commit()) {
             "The encrypted EAP credential could not be removed."
         }
     }
+
+    private fun key(name: String, profileId: String?): String =
+        if (profileId == null) name else "profile.$profileId.$name"
 
     private fun getOrCreateKey(): SecretKey {
         val keyStore = loadKeyStore()

@@ -71,9 +71,15 @@ fun VpnApp(
         return
     }
 
+    state.credentialPromptProfileName?.let { name ->
+        ProfilePasswordDialog(name, viewModel::cancelProfilePassword, viewModel::submitProfilePassword)
+    }
+
     when (state.screen) {
         AppScreen.SETUP -> SetupScreen(
             state = state,
+            onSelectProfile = viewModel::selectProfile,
+            onAddProfile = viewModel::addProfile,
             onProfileNameChanged = viewModel::updateProfileName,
             onServerChanged = viewModel::updateServerAddress,
             onUsernameChanged = viewModel::updateUsername,
@@ -85,6 +91,8 @@ fun VpnApp(
         )
         AppScreen.MAIN -> MainScreen(
             state = state,
+            onSelectProfile = viewModel::selectProfile,
+            onAddProfile = viewModel::addProfile,
             onConnect = viewModel::connect,
             onDisconnect = viewModel::disconnect,
             onEdit = viewModel::showSetup,

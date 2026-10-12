@@ -245,6 +245,13 @@ checklist, not as evidence that testing has already passed.
 
 ## Roadmap
 
-Potential future work includes a separate local IKE identity, multiple
-profiles, additional routing modes, and device-validated release automation.
+Potential future work includes a separate local IKE identity, additional routing modes, and device-validated release automation.
 These are not part of the current v1.3 scope.
+
+## Multiple profiles
+
+Use **Add Profile** to create or import another configuration. The profile menu
+selects a saved configuration after disconnecting and returns to the connection
+screen. Each configuration retains its own CA certificate and encrypted password.
+Editing is available separately through **Edit Profile**. Profiles from older builds
+whose passwords were discarded ask for a password once in a separate dialog.

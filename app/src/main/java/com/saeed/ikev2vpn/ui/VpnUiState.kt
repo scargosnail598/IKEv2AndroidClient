@@ -21,6 +21,10 @@ data class ImportedProfileUiInfo(
 )
 
 data class VpnUiState(
+    val profiles: List<com.saeed.ikev2vpn.data.StoredProfile> = emptyList(),
+    val credentialPromptProfileName: String? = null,
+    val draftRevision: Int = 0,
+    val selectedProfileId: String = "legacy",
     val initialized: Boolean = false,
     val screen: AppScreen = AppScreen.SETUP,
     val configured: Boolean = false,

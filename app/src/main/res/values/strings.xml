@@ -1,4 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="ikev2_app_name">IKEv2 VPN</string>
+    <string name="ikev2_app_name" translatable="false">IKEv2 VPN</string>
 </resources>

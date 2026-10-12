@@ -31,6 +31,8 @@ import com.saeed.ikev2vpn.vpn.ConnectionState
 @Composable
 fun MainScreen(
     state: VpnUiState,
+    onSelectProfile: (String) -> Unit,
+    onAddProfile: () -> Unit,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
     onEdit: () -> Unit,
@@ -48,7 +50,9 @@ fun MainScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text("IKEv2 VPN", style = MaterialTheme.typography.headlineMedium)
-        Spacer(Modifier.height(56.dp))
+        ProfileSelector(state, onSelectProfile, onAddProfile)
+        Text("${state.username} · ${state.serverAddress}", style = MaterialTheme.typography.bodySmall)
+        Spacer(Modifier.height(32.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
                 modifier = Modifier
@@ -78,7 +82,7 @@ fun MainScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(64.dp),
-            enabled = !disconnecting && state.connectionState != ConnectionState.NOT_CONFIGURED,
+            enabled = !state.isBusy && !disconnecting && state.connectionState != ConnectionState.NOT_CONFIGURED,
         ) {
             Text(
                 when {

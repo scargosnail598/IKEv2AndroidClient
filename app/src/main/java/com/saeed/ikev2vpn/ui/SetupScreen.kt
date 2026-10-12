@@ -44,6 +44,8 @@ import com.saeed.ikev2vpn.validation.ProfileField
 @Composable
 fun SetupScreen(
     state: VpnUiState,
+    onSelectProfile: (String) -> Unit,
+    onAddProfile: () -> Unit,
     onProfileNameChanged: (String) -> Unit,
     onServerChanged: (String) -> Unit,
     onUsernameChanged: (String) -> Unit,
@@ -63,9 +65,10 @@ fun SetupScreen(
             state.configured || (state.importedProfileInfo == null && hasDraftProfile),
         )
     }
-    LaunchedEffect(state.importedProfileInfo?.importRevision) {
+    LaunchedEffect(state.draftRevision, state.selectedProfileId, state.importedProfileInfo?.importRevision) {
+        password = ""
+        manualSetupExpanded = state.importedProfileInfo == null && hasDraftProfile
         if (state.importedProfileInfo != null) {
-            password = ""
             manualSetupExpanded = false
         }
     }
@@ -95,13 +98,14 @@ fun SetupScreen(
             .padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
+        ProfileSelector(state, onSelectProfile, onAddProfile)
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = if (state.configured) "Edit VPN Profile" else "Set Up IKEv2 VPN",
+                    text = if (hasDraftProfile) "Edit VPN Profile" else "Set Up IKEv2 VPN",
                     style = MaterialTheme.typography.headlineMedium,
                 )
                 Text(
