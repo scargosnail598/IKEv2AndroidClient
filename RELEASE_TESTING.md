@@ -1,7 +1,7 @@
-# Android v1.4.2 Release Testing
+# Android v1.4.3 Release Testing
 
 Complete this checklist against the release candidate before creating
-`android-v1.4.2`. Record only observed results as `PASS`, `FAIL`, or `BLOCKED`;
+`android-v1.4.3`. Record only observed results as `PASS`, `FAIL`, or `BLOCKED`;
 this document is not evidence that any test has already passed.
 
 ## Device record matrix
@@ -175,7 +175,7 @@ Perform each case independently and restore the valid profile afterward:
 | APK checksum verified |  |  |
 | Signing key backup verified |  |  |
 
-Do not mark v1.4.2 ready while any required gate has failed or remains
+Do not mark v1.4.3 ready while any required gate has failed or remains
 unexplained. Attach only sanitized evidence and record device-specific quirks.
 
 ## Connection and profiles UX
@@ -218,7 +218,7 @@ unexplained. Attach only sanitized evidence and record device-specific quirks.
 
 ## About and in-app updater
 
-- [ ] About displays version 1.4.2 / code 8, the build type, source link, and update controls.
+- [ ] About displays version 1.4.3 / code 9, the build type, source link, and update controls.
 - [ ] Verify no-release, offline, GitHub rate-limit, already-current, and newer-release states.
 - [ ] Download a newer official release with the same signing key; verify progress,
       cancellation/retry, release notes, SHA-256, and no profile/credential changes.
@@ -263,3 +263,31 @@ unverified in the build environment; these are the requested device checks:
       the Connection screen opens and the normal connection controls work.
 - [ ] Add two widget instances, resize with large text, remove one, then remove
       all. Re-add and verify updates resume. Check after reboot and app update.
+
+## v1.4.3 notification controls
+
+- [ ] On Android 13+, after profile setup, allow notifications. Verify one
+      permission request, no repeated prompts after denial, and recovery through
+      More → Notifications. Check permission and channel blocking separately.
+- [ ] With the app backgrounded, tap Connect on the disconnected notification;
+      verify the selected profile connects without an Activity opening.
+- [ ] Tap Disconnect while connected and while connecting; verify teardown without
+      a confirmation Activity, followed by one idle Connect notification.
+- [ ] Test error/retry, double taps, stale actions after profile deletion or
+      pending setup, and cold-process actions. Verify no credential is in a
+      PendingIntent or public notification.
+- [ ] Revoke VPN consent; verify an actionable error, then finish consent in-app.
+- [ ] On API 30 and API 33+, verify foreground service timing, notification
+      transitions, lock-screen privacy, channel settings and launcher widget.
+
+Physical notification interaction and device installation remain unverified
+in this build environment. Automated tests cover action guards and idle-display
+policy. This change does not add a Quick Settings tile.
+
+### v1.4.3 publication record — 2026-10-18
+
+The maintainer requested publication after the local signed build, 140 JVM
+tests, native traffic tests and lint passed. Physical notification interaction
+and the API 30–32 / API 33+ device matrix remain unverified in this environment;
+publication proceeds with that documented exception and does not mark those
+device checks as passed. The existing production signing key is retained.

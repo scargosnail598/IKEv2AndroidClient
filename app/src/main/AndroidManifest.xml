@@ -36,6 +36,9 @@
         android:networkSecurityConfig="@xml/network_security_config"
         android:usesCleartextTraffic="false">
 
+        <receiver android:name="com.saeed.ikev2vpn.notifications.VpnNotificationActionReceiver"
+            android:exported="false" />
+
         <receiver
             android:name="com.saeed.ikev2vpn.widget.VpnWidgetProvider"
             android:label="@string/vpn_widget_name"

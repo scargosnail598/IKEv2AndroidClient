@@ -5,7 +5,7 @@ and the strongSwan userland VPN engine.
 
 ## Status and version
 
-The current application version is **1.4.2** (`versionCode = 8`). The Gradle
+The current application version is **1.4.3** (`versionCode = 9`). The Gradle
 configuration in `app/build.gradle.kts` is the version source of truth.
 
 The repository is maintained as an independent Android project. Release-device
@@ -259,6 +259,24 @@ GPL-2.0-or-later. The upstream strongSwan license and its OpenSSL linking
 exception are included in `third_party/strongswan/LICENSE`. OpenSSL carries its
 own license in the pinned source archive.
 
+## Notification controls
+
+After saving a VPN profile, the app requests notification permission once on
+Android 13+. Allow it to show VPN controls in the notification drawer. When
+disconnected, the quiet VPN notification offers **Connect**; the active VPN
+notification offers **Disconnect** (or cancellation while connecting). Error
+notifications offer **Retry**. These action buttons use the selected saved
+profile and encrypted credential without opening an Activity. No Quick Settings
+tile is required. The first VPN consent and profile/password setup still take
+place in the app; if permission is revoked or setup is incomplete, the action
+reports that the app needs attention.
+
+Use **More → Notifications** to enable notifications again or adjust the VPN
+notification channel in Android settings. Controls are enabled after setup and
+notification permission, not silently at APK installation. Android controls
+notification visibility and dismissal; it may hide them when notifications are
+blocked, the app is force-stopped, or before the app starts after reboot.
+
 ## Home-screen widget
 
 Long-press an empty area of your Android home screen, open **Widgets**, and add
@@ -327,15 +345,15 @@ read -rsp "Key password: " ANDROID_KEY_PASSWORD; export ANDROID_KEY_PASSWORD; pr
 An explicit release task fails when any signing value is missing. Debug builds,
 tests, and lint do not read or require signing credentials.
 
-After completing [RELEASE_TESTING.md](RELEASE_TESTING.md), build v1.4.2 with:
+After completing [RELEASE_TESTING.md](RELEASE_TESTING.md), build v1.4.3 with:
 
 ```bash
 ./gradlew --no-daemon --no-configuration-cache clean assembleRelease
 mkdir -p dist
-cp app/build/outputs/apk/release/app-release.apk dist/ikev2-android-v1.4.2.apk
-apksigner verify --verbose --print-certs dist/ikev2-android-v1.4.2.apk
-(cd dist && sha256sum ikev2-android-v1.4.2.apk > ikev2-android-v1.4.2.apk.sha256)
-(cd dist && sha256sum -c ikev2-android-v1.4.2.apk.sha256)
+cp app/build/outputs/apk/release/app-release.apk dist/ikev2-android-v1.4.3.apk
+apksigner verify --verbose --print-certs dist/ikev2-android-v1.4.3.apk
+(cd dist && sha256sum ikev2-android-v1.4.3.apk > ikev2-android-v1.4.3.apk.sha256)
+(cd dist && sha256sum -c ikev2-android-v1.4.3.apk.sha256)
 unset ANDROID_KEYSTORE_PATH ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD
 ```
 
@@ -347,7 +365,7 @@ for every update.
 
 `dist/` is ignored. After the signed release candidate passes the manual device
 checklist, run **Tag Android Release** from the Actions tab on `main`, enter
-`1.4.2`, and confirm device validation. The workflow checks that the requested
+`1.4.3`, and confirm device validation. The workflow checks that the requested
 version matches Gradle, runs unsigned CI validation, creates the annotated tag,
 and starts **Android Release** to build and publish the signed APK and checksum.
 The Android Release workflow can also be started manually for an existing tag.

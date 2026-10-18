@@ -53,6 +53,7 @@ import org.strongswan.android.logic.VpnStateService.State;
 import org.strongswan.android.logic.imc.ImcState;
 import org.strongswan.android.logic.imc.RemediationInstruction;
 import com.saeed.ikev2vpn.MainActivity;
+import com.saeed.ikev2vpn.notifications.VpnNotificationActionReceiver;
 import org.strongswan.android.ui.VpnProfileControlActivity;
 import org.strongswan.android.utils.Constants;
 import org.strongswan.android.utils.IPRange;
@@ -88,7 +89,7 @@ public class CharonVpnService extends VpnService implements Runnable, VpnStateSe
 	private static final String TAG = CharonVpnService.class.getSimpleName();
 	private static final String VPN_SERVICE_ACTION = "android.net.VpnService";
 	public static final String DISCONNECT_ACTION = "org.strongswan.android.CharonVpnService.DISCONNECT";
-	private static final String NOTIFICATION_CHANNEL = "org.strongswan.android.CharonVpnService.VPN_STATE_NOTIFICATION";
+	public static final String NOTIFICATION_CHANNEL = "org.strongswan.android.CharonVpnService.VPN_STATE_NOTIFICATION";
 	public static final String LOG_FILE = "charon.log";
 	public static final String KEY_IS_RETRY = "retry";
 	public static final int VPN_STATE_NOTIFICATION_ID = 1;
@@ -273,6 +274,8 @@ public class CharonVpnService extends VpnService implements Runnable, VpnStateSe
 					if (mNextProfile == null)
 					{
 						setState(State.DISABLED);
+						/* Also clear the foreground notification after a failed initialization. */
+						removeNotification();
 						if (mTerminate)
 						{
 							break;
@@ -457,6 +460,9 @@ public class CharonVpnService extends VpnService implements Runnable, VpnStateSe
 		NotificationCompat.Builder builder = new NotificationCompat.Builder(this, NOTIFICATION_CHANNEL)
 			.setSmallIcon(R.drawable.ic_notification)
 			.setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .setOnlyAlertOnce(true)
+            .setOngoing(true)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
 			.setVisibility(publicVersion ? NotificationCompat.VISIBILITY_PUBLIC
 										 : NotificationCompat.VISIBILITY_PRIVATE);
 		int s = R.string.state_disabled;
@@ -475,17 +481,7 @@ public class CharonVpnService extends VpnService implements Runnable, VpnStateSe
 					builder.setProgress(mService.getRetryTimeout(), retry, false);
 				}
 
-				Intent intent = new Intent(getApplicationContext(), VpnProfileControlActivity.class);
-				intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-				intent.setAction(VpnProfileControlActivity.START_PROFILE);
-				intent.putExtra(VpnProfileControlActivity.EXTRA_VPN_PROFILE_UUID, profile.getUUID().toString());
-				int flags = PendingIntent.FLAG_UPDATE_CURRENT;
-				if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
-				{
-					flags |= PendingIntent.FLAG_IMMUTABLE;
-				}
-				PendingIntent pending = PendingIntent.getActivity(getApplicationContext(), 0, intent,
-																  flags);
+				PendingIntent pending = VpnNotificationActionReceiver.connectIntent(getApplicationContext());
 				builder.addAction(R.drawable.ic_notification_connecting, getString(R.string.retry), pending);
 				add_action = true;
 			}
@@ -524,10 +520,7 @@ public class CharonVpnService extends VpnService implements Runnable, VpnStateSe
 		{
 			if (add_action)
 			{
-				Intent intent = new Intent(getApplicationContext(), VpnProfileControlActivity.class);
-				intent.setAction(VpnProfileControlActivity.DISCONNECT);
-				PendingIntent pending = PendingIntent.getActivity(getApplicationContext(), 0, intent,
-																  flags);
+				PendingIntent pending = VpnNotificationActionReceiver.disconnectIntent(getApplicationContext());
 				builder.addAction(R.drawable.ic_notification_disconnect, getString(R.string.disconnect), pending);
 			}
 			if (error == ErrorState.NO_ERROR)

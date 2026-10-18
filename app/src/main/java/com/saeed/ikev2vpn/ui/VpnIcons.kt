@@ -10,6 +10,7 @@ import androidx.compose.ui.unit.dp
 
 /** Small, consistent outline icons; no extra icon pack or bitmap assets. */
 internal object VpnIcons {
+    val Bell = icon("Bell", "M18 8 A6 6 0 0 0 6 8 C6 15 3 15 3 17 H21 C21 15 18 15 18 8 M10 21 H14")
     val Info = icon("Info", "M12 3 A9 9 0 1 0 12 21 A9 9 0 1 0 12 3 M12 11 V17 M12 7 H12.1")
     val Shield = icon("Shield", "M12 3 L20 6 V11 C20 16 16 20 12 22 C8 20 4 16 4 11 V6 Z M9 12 L11 14 L15 10")
     val Download = icon("Download", "M12 3 V16 M7 11 L12 16 L17 11 M4 17 V21 H20 V17")

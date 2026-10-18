@@ -32,9 +32,14 @@ fun VpnApp(
     updateViewModel: com.saeed.ikev2vpn.update.AppUpdateViewModel,
     darkMode: Boolean,
     onDarkModeChanged: (Boolean) -> Unit,
+    onConfigured: () -> Unit = {},
+    onNotificationSettings: () -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val updateState by updateViewModel.state.collectAsStateWithLifecycle()
+    LaunchedEffect(state.initialized, state.configured) {
+        if (state.initialized && state.configured) onConfigured()
+    }
     val updatePermission = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         updateViewModel.onInstallPermissionResult()
     }
@@ -156,6 +161,7 @@ fun VpnApp(
                     onDiagnostics = viewModel::showDiagnostics, darkMode = darkMode,
                     onDarkModeChanged = onDarkModeChanged, onDismissError = viewModel::dismissError,
                     onAbout = viewModel::showAbout,
+                    onNotificationSettings = onNotificationSettings,
                     onCheckUpdates = { viewModel.showAbout(); updateViewModel.check() },
                 )
                 AppScreen.PROFILES -> ProfilesScreen(

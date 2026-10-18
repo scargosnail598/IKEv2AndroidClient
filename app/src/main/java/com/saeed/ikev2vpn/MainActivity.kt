@@ -36,6 +36,32 @@ class MainActivity : ComponentActivity() {
         com.saeed.ikev2vpn.update.AppUpdateViewModel.Factory((application as Ikev2VpnApplication).appUpdates)
     }
 
+    private val notificationPermission = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
+    ) { (application as Ikev2VpnApplication).notificationControls.refresh() }
+
+    private fun requestNotificationsOnce() {
+        if (android.os.Build.VERSION.SDK_INT < 33 ||
+            !lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) return
+        val preferences = getSharedPreferences("notification_controls", MODE_PRIVATE)
+        if (preferences.getBoolean("permission_handled", false)) return
+        preferences.edit().putBoolean("permission_handled", true).apply()
+        if (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.POST_NOTIFICATIONS)
+            == android.content.pm.PackageManager.PERMISSION_GRANTED) return
+        notificationPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+    }
+
+    private fun openNotificationSettings() {
+        startActivity(Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+            .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, packageName))
+    }
+
+    override fun onResume() {
+        super.onResume()
+        (application as Ikev2VpnApplication).notificationControls.refresh()
+        if (viewModel.uiState.value.configured) requestNotificationsOnce()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (savedInstanceState == null) handleConfigurationIntent(intent)
@@ -66,6 +92,8 @@ class MainActivity : ComponentActivity() {
                         viewModel = viewModel,
                         updateViewModel = updateViewModel,
                         darkMode = darkTheme,
+                        onConfigured = ::requestNotificationsOnce,
+                        onNotificationSettings = ::openNotificationSettings,
                         onDarkModeChanged = { enabled ->
                             coroutineScope.launch {
                                 application.themePreferences.setDarkMode(enabled)

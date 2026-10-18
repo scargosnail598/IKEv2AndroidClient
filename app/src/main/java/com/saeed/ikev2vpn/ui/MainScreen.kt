@@ -23,6 +23,7 @@ fun MainScreen(
     onConnect: () -> Unit, onDisconnect: () -> Unit, onDiagnostics: () -> Unit,
     darkMode: Boolean, onDarkModeChanged: (Boolean) -> Unit, onDismissError: () -> Unit,
     onAbout: () -> Unit = {}, onCheckUpdates: () -> Unit = {},
+    onNotificationSettings: () -> Unit = {},
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     val connected = state.connectionState == ConnectionState.CONNECTED && state.stateConfirmed
@@ -45,6 +46,8 @@ fun MainScreen(
                     DropdownMenuItem(text = { Text(if (darkMode) "Light appearance" else "Dark appearance") },
                         leadingIcon = { Icon(VpnIcons.Moon, null) },
                         onClick = { menuOpen = false; onDarkModeChanged(!darkMode) })
+                    DropdownMenuItem(text = { Text("Notifications") }, leadingIcon = { Icon(VpnIcons.Bell, null) },
+                        onClick = { menuOpen = false; onNotificationSettings() })
                     DropdownMenuItem(text = { Text("Check for updates") }, leadingIcon = { Icon(VpnIcons.Download, null) },
                         onClick = { menuOpen = false; onCheckUpdates() })
                     DropdownMenuItem(text = { Text("About") }, leadingIcon = { Icon(VpnIcons.Info, null) },
