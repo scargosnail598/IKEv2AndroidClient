@@ -1,7 +1,7 @@
-# Android v1.4.1 Release Testing
+# Android v1.4.2 Release Testing
 
 Complete this checklist against the release candidate before creating
-`android-v1.4.1`. Record only observed results as `PASS`, `FAIL`, or `BLOCKED`;
+`android-v1.4.2`. Record only observed results as `PASS`, `FAIL`, or `BLOCKED`;
 this document is not evidence that any test has already passed.
 
 ## Device record matrix
@@ -175,7 +175,7 @@ Perform each case independently and restore the valid profile afterward:
 | APK checksum verified |  |  |
 | Signing key backup verified |  |  |
 
-Do not mark v1.4.1 ready while any required gate has failed or remains
+Do not mark v1.4.2 ready while any required gate has failed or remains
 unexplained. Attach only sanitized evidence and record device-specific quirks.
 
 ## Connection and profiles UX
@@ -218,7 +218,7 @@ unexplained. Attach only sanitized evidence and record device-specific quirks.
 
 ## About and in-app updater
 
-- [ ] About displays version 1.4.1 / code 7, the build type, source link, and update controls.
+- [ ] About displays version 1.4.2 / code 8, the build type, source link, and update controls.
 - [ ] Verify no-release, offline, GitHub rate-limit, already-current, and newer-release states.
 - [ ] Download a newer official release with the same signing key; verify progress,
       cancellation/retry, release notes, SHA-256, and no profile/credential changes.
@@ -245,3 +245,21 @@ API 33+ device rows remain unverified, including end-to-end installation and VPN
 reconnection after upgrade. Publication does not mark those checks as passed.
 Automated results and signed-artifact verification are recorded in the release
 notes; the unchecked device checklist remains required follow-up work.
+
+## v1.4.2 widget and upgrade checks
+
+The maintainer requested this update to test the in-app updater from official
+v1.4.1. It retains the same production signing key, with versionCode increased
+from 7 to 8. Physical launcher behavior and end-to-end installation remain
+unverified in the build environment; these are the requested device checks:
+
+- [ ] On official 1.4.1, check updates, download 1.4.2, allow installation if
+      requested, and install without uninstalling. Verify profiles are retained.
+- [ ] Reopen About: version 1.4.2 / code 8; checking again reports current.
+- [ ] Add IKEv2 VPN through the launcher widget picker on API 30 and API 31+.
+- [ ] Verify selected profile, connected/disconnected/transitional/error states,
+      and no false connected state during startup.
+- [ ] Tap the widget from a cold app, About, Profiles, and a clean editor; verify
+      the Connection screen opens and the normal connection controls work.
+- [ ] Add two widget instances, resize with large text, remove one, then remove
+      all. Re-add and verify updates resume. Check after reboot and app update.

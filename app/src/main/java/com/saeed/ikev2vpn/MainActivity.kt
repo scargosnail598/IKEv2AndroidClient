@@ -82,6 +82,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleConfigurationIntent(incoming: Intent) {
+        if (incoming.action == com.saeed.ikev2vpn.widget.VpnWidgetUpdater.ACTION_OPEN_CONNECTION) {
+            viewModel.showMain()
+            return
+        }
         if (incoming.action != Intent.ACTION_VIEW) return
         val text = incoming.dataString ?: return
         // Remove credentials from the Activity's retained intent before any recreation.

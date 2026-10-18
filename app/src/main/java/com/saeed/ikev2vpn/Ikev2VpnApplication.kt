@@ -13,6 +13,8 @@ import com.saeed.ikev2vpn.vpn.VpnPlatformController
 import org.strongswan.android.logic.StrongSwanApplication
 
 class Ikev2VpnApplication : StrongSwanApplication() {
+    lateinit var widgetUpdater: com.saeed.ikev2vpn.widget.VpnWidgetUpdater
+        private set
     lateinit var appUpdates: com.saeed.ikev2vpn.update.AppUpdateRepository
         private set
     lateinit var profileRepository: ProfileRepository
@@ -35,5 +37,7 @@ class Ikev2VpnApplication : StrongSwanApplication() {
         ikevProfileImporter = AndroidIkevProfileImporter(contentResolver, certificateLoader)
         vpnController = StrongSwanVpnController(this)
         themePreferences = ThemePreferences(this)
+        widgetUpdater = com.saeed.ikev2vpn.widget.VpnWidgetUpdater(this, profileRepository, vpnController)
+        widgetUpdater.start()
     }
 }

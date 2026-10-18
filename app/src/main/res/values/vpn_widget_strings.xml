@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Match the app’s current English interface; upstream engine translations are separate. -->
+    <string name="vpn_widget_name" translatable="false">IKEv2 VPN</string>
+    <string name="vpn_widget_description" translatable="false">VPN status and a shortcut to your connection</string>
+    <string name="vpn_widget_checking" translatable="false">Checking VPN…</string>
+    <string name="vpn_widget_setup" translatable="false">Set up VPN</string>
+    <string name="vpn_widget_disconnected" translatable="false">Disconnected</string>
+    <string name="vpn_widget_connecting" translatable="false">Connecting…</string>
+    <string name="vpn_widget_connected" translatable="false">Connected</string>
+    <string name="vpn_widget_disconnecting" translatable="false">Disconnecting…</string>
+    <string name="vpn_widget_error" translatable="false">Connection error</string>
+    <string name="vpn_widget_unknown" translatable="false">Status unavailable</string>
+    <string name="vpn_widget_no_profile" translatable="false">No profile selected</string>
+    <string name="vpn_widget_open" translatable="false">Open connection →</string>
+</resources>

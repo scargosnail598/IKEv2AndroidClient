@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/vpn_widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center_vertical"
+    android:padding="10dp"
+    android:background="@drawable/vpn_widget_background">
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:gravity="center_vertical">
+        <ImageView android:layout_width="18dp" android:layout_height="18dp"
+            android:src="@drawable/ic_vpn" android:importantForAccessibility="no" />
+        <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+            android:layout_marginStart="6dp" android:text="@string/vpn_widget_name"
+            android:textColor="#BAC8D8" android:textSize="12sp" android:maxLines="1" android:ellipsize="end" />
+    </LinearLayout>
+    <TextView android:id="@+id/vpn_widget_status" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="4dp" android:text="@string/vpn_widget_checking"
+        android:textColor="#E1E7EF" android:textSize="18sp" android:textStyle="bold"
+        android:maxLines="1" android:ellipsize="end" />
+    <TextView android:id="@+id/vpn_widget_profile" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:text="@string/vpn_widget_no_profile" android:textColor="#BAC8D8" android:textSize="12sp"
+        android:maxLines="1" android:ellipsize="end" />
+    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="6dp" android:text="@string/vpn_widget_open"
+        android:textColor="#70E1B5" android:textSize="12sp" android:maxLines="1" android:ellipsize="end" />
+</LinearLayout>
