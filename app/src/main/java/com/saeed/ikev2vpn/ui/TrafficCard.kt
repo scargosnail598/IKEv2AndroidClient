@@ -12,11 +12,12 @@ import com.saeed.ikev2vpn.vpn.VpnTraffic
 import java.util.Locale
 
 @Composable
-internal fun TrafficCard(traffic: VpnTraffic?, connected: Boolean) {
+internal fun TrafficCard(traffic: VpnTraffic?, connected: Boolean, serverAddress: String,
+    sessionId: String?, routing: com.saeed.ikev2vpn.data.AppRoutingConfig) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("VPN traffic", style = MaterialTheme.typography.labelLarge)
+                Text("Connection stats", style = MaterialTheme.typography.labelLarge)
                 Text(when {
                     !connected -> "No active session"
                     traffic == null -> "Waiting for data…"
@@ -27,6 +28,8 @@ internal fun TrafficCard(traffic: VpnTraffic?, connected: Boolean) {
                 TrafficValue("Download · In", VpnIcons.Download, traffic?.downloadBytes, Modifier.weight(1f))
                 TrafficValue("Upload · Out", VpnIcons.Upload, traffic?.uploadBytes, Modifier.weight(1f))
             }
+            HorizontalDivider()
+            ServerPingRow(serverAddress, sessionId, connected, routing)
         }
     }
 }

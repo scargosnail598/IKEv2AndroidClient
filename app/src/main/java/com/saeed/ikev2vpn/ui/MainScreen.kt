@@ -123,7 +123,7 @@ fun MainScreen(
                 })
             }
         }
-        if (state.configured) TrafficCard(state.traffic.takeIf { connected }, connected)
+        if (state.configured) TrafficCard(state.traffic.takeIf { connected }, connected, state.serverAddress, state.sessionId, state.appRouting)
         state.error?.let { ErrorCard(it, onDismissError) }
         if (state.configured) SessionCard(state, onDiagnostics)
         if (state.provisioningStatus == com.saeed.ikev2vpn.data.ProvisioningStatus.PENDING_CONSENT) {
