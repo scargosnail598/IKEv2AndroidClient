@@ -85,8 +85,8 @@ android {
         applicationId = "com.saeed.ikev2vpn"
         minSdk = 30
         targetSdk = 36
-        versionCode = 5
-        versionName = "1.3.1"
+        versionCode = 7
+        versionName = "1.4.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -158,6 +158,16 @@ tasks.configureEach {
     if (name.startsWith("configureNdkBuild") || name.startsWith("externalNativeBuild")) {
         dependsOn(prepareStrongSwan)
     }
+}
+
+val testNativeTraffic by tasks.registering(Exec::class) {
+    group = "verification"
+    description = "Tests the native VPN byte counters, including concurrent access and reconnect reset."
+    commandLine("bash", rootProject.file("scripts/test-native-traffic.sh").absolutePath)
+}
+
+tasks.configureEach {
+    if (name == "testDebugUnitTest") dependsOn(testNativeTraffic)
 }
 
 val verifyReleaseSigning by tasks.registering {

@@ -9,9 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
@@ -32,19 +30,11 @@ fun DiagnosticsScreen(state: VpnUiState, onBack: () -> Unit, onClearLog: () -> U
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .statusBarsPadding()
-            .navigationBarsPadding()
             .verticalScroll(rememberScrollState())
-            .padding(24.dp),
+            .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text("Diagnostics", modifier = Modifier.weight(1f), style = MaterialTheme.typography.headlineMedium)
-            TextButton(onClick = onBack) { Text("Back") }
-        }
+        ScreenHeader("Diagnostics", onBack = onBack)
         Text(
             "Diagnostics never include the VPN password.",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -68,7 +58,7 @@ fun DiagnosticsScreen(state: VpnUiState, onBack: () -> Unit, onClearLog: () -> U
         DiagnosticRow("CA subject", state.certificateInfo?.subject ?: "Not imported")
         DiagnosticRow("CA issuer", state.certificateInfo?.issuer ?: "Not imported")
         DiagnosticRow("CA SHA-256", state.certificateInfo?.sha256Fingerprint ?: "Not imported")
-        DiagnosticRow("Last session ID", state.sessionId ?: "Unavailable")
+        DiagnosticRow("Current session ID", state.sessionId ?: "No active session")
         HorizontalDivider()
         DiagnosticRow("Last VPN error", state.lastVpnError ?: state.error ?: "None")
         DiagnosticRow("Technical detail", state.lastTechnicalError ?: state.technicalError ?: "None")

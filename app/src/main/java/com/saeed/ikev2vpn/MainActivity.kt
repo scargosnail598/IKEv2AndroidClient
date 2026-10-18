@@ -32,6 +32,10 @@ class MainActivity : ComponentActivity() {
         )
     }
 
+    private val updateViewModel: com.saeed.ikev2vpn.update.AppUpdateViewModel by viewModels {
+        com.saeed.ikev2vpn.update.AppUpdateViewModel.Factory((application as Ikev2VpnApplication).appUpdates)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (savedInstanceState == null) handleConfigurationIntent(intent)
@@ -60,6 +64,7 @@ class MainActivity : ComponentActivity() {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     VpnApp(
                         viewModel = viewModel,
+                        updateViewModel = updateViewModel,
                         darkMode = darkTheme,
                         onDarkModeChanged = { enabled ->
                             coroutineScope.launch {

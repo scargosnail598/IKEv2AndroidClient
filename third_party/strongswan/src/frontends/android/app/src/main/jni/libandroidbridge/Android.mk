@@ -11,6 +11,7 @@ backend/android_dns_proxy.c \
 backend/android_private_key.c \
 backend/android_scheduler.c \
 backend/android_service.c \
+backend/android_traffic.c \
 charonservice.c \
 kernel/android_ipsec.c \
 kernel/android_net.c \

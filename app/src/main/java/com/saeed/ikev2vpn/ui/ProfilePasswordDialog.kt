@@ -31,7 +31,7 @@ fun ProfilePasswordDialog(profileName: String, onDismiss: () -> Unit, onSubmit: 
             val submitted = password
             password = ""
             onSubmit(submitted)
-        }) { Text("Select Profile") } },
+        }) { Text("Use profile") } },
         dismissButton = { TextButton(onClick = { password = ""; onDismiss() }) { Text("Cancel") } },
     )
 }

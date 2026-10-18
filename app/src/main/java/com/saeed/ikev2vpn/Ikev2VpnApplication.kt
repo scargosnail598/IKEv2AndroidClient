@@ -13,6 +13,8 @@ import com.saeed.ikev2vpn.vpn.VpnPlatformController
 import org.strongswan.android.logic.StrongSwanApplication
 
 class Ikev2VpnApplication : StrongSwanApplication() {
+    lateinit var appUpdates: com.saeed.ikev2vpn.update.AppUpdateRepository
+        private set
     lateinit var profileRepository: ProfileRepository
         private set
     lateinit var certificateImporter: CertificateImporter
@@ -26,6 +28,7 @@ class Ikev2VpnApplication : StrongSwanApplication() {
 
     override fun onCreate() {
         super.onCreate()
+        appUpdates = com.saeed.ikev2vpn.update.GitHubAppUpdateRepository(this)
         val certificateLoader = CertificateLoader()
         profileRepository = DataStoreProfileRepository(this, certificateLoader)
         certificateImporter = AndroidCertificateImporter(contentResolver, certificateLoader)

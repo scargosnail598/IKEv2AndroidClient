@@ -62,6 +62,12 @@ interface ProfileRepository {
     suspend fun abortStagedProfile(platformProfileReplaced: Boolean)
     suspend fun setProvisioningStatus(status: ProvisioningStatus)
     suspend fun recordError(userMessage: String, technicalMessage: String)
+    suspend fun renameProfile(id: String, name: String) {
+        throw UnsupportedOperationException("Profile renaming is unavailable.")
+    }
+    suspend fun deleteProfile(id: String) {
+        throw UnsupportedOperationException("Profile deletion is unavailable.")
+    }
     suspend fun clearError()
     suspend fun recordConnectionEvents(events: List<VpnLogEntry>) = Unit
     suspend fun clearConnectionEvents() = Unit
@@ -181,6 +187,43 @@ class DataStoreProfileRepository(
             }
             preferences[STATUS] = status.name
         }
+    }
+
+    override suspend fun renameProfile(id: String, name: String) {
+        require(com.saeed.ikev2vpn.validation.ProfileValidator.isValidProfileName(name))
+        applicationContext.profileDataStore.edit { updateStoredProfile(it, id, name) }
+    }
+
+    override suspend fun deleteProfile(id: String) {
+        applicationContext.profileDataStore.edit { updateStoredProfile(it, id, null) }
+        val remaining = applicationContext.profileDataStore.data.first()
+        removeUnreferencedCertificatesForFingerprints(setOfNotNull(remaining[CERTIFICATE_FINGERPRINT]))
+    }
+
+    /** A null name removes only this profile; other profiles keep their trust and routing. */
+    private fun updateStoredProfile(preferences: androidx.datastore.preferences.core.MutablePreferences, id: String, name: String?) {
+        check(pendingValues(preferences) == null) { "Finish VPN permission setup before changing profiles." }
+        val currentId = preferences[PROFILE_ID] ?: "legacy"
+        if (committedValues(preferences) != null && currentId == id) {
+            if (name != null) preferences[PROFILE_NAME] = name
+            else {
+                listOf(PROFILE_ID, PROFILE_NAME, SERVER_ADDRESS, USERNAME, APP_ROUTING, CERTIFICATE_FINGERPRINT, STATUS)
+                    .forEach { preferences.remove(it) }
+            }
+            return
+        }
+        val archived = JSONArray(preferences[ARCHIVED_PROFILES] ?: "[]")
+        val updated = JSONArray()
+        var found = false
+        for (index in 0 until archived.length()) {
+            val profile = archived.getJSONObject(index)
+            if (profile.optString(PROFILE_ID.name, "legacy") == id) {
+                found = true
+                if (name != null) updated.put(profile.put(PROFILE_NAME.name, name))
+            } else updated.put(profile)
+        }
+        check(found) { "The saved profile is no longer available." }
+        preferences[ARCHIVED_PROFILES] = updated.toString()
     }
 
     override suspend fun recordError(userMessage: String, technicalMessage: String) {

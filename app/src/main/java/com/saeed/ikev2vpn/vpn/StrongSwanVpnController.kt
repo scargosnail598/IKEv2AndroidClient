@@ -7,6 +7,8 @@ import android.content.ServiceConnection
 import android.net.VpnService
 import android.os.Bundle
 import android.os.IBinder
+import android.os.Handler
+import android.os.Looper
 import androidx.core.content.ContextCompat
 import com.saeed.ikev2vpn.data.VpnProfileConfig
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -37,6 +39,7 @@ class StrongSwanVpnController(context: Context) : VpnPlatformController {
     private val serviceExecutor = Executors.newSingleThreadScheduledExecutor { task ->
         Thread(task, "strongswan-state").apply { isDaemon = true }
     }
+    private val mainHandler = Handler(Looper.getMainLooper())
     private var stateService: VpnStateService? = null
     private var logOffset = 0L
     private var initialLogRead = true
@@ -68,7 +71,13 @@ class StrongSwanVpnController(context: Context) : VpnPlatformController {
             serviceConnection,
             Context.BIND_AUTO_CREATE,
         )
-        serviceExecutor.scheduleWithFixedDelay(::pollCharonLog, 0, 1, TimeUnit.SECONDS)
+        serviceExecutor.scheduleWithFixedDelay({
+            pollCharonLog()
+            mainHandler.post {
+                refreshStrongSwanState()
+                refreshTraffic()
+            }
+        }, 0, 1, TimeUnit.SECONDS)
     }
 
     override fun isPlatformSupported(): Boolean = true
@@ -240,6 +249,24 @@ class StrongSwanVpnController(context: Context) : VpnPlatformController {
         }
     }
 
+    override fun forgetProfileCredential(profileId: String) = credentialStore.clear(profileId)
+
+    override fun renameProvisionedProfile(name: String): VpnResult<Unit> {
+        return try {
+            val source = VpnProfileSource(appContext).open()
+            try {
+                val profile = readStoredProfile(source) ?: error("The VPN profile is unavailable.")
+                profile.name = name
+                check(source.updateVpnProfile(profile)) { "The VPN profile name could not be updated." }
+            } finally {
+                source.close()
+            }
+            VpnResult.Success(Unit)
+        } catch (exception: Exception) {
+            fail("The profile could not be renamed.", exception)
+        }
+    }
+
     override fun refreshState() = refreshStrongSwanState()
 
     override fun clearEventLog() {
@@ -276,6 +303,10 @@ class StrongSwanVpnController(context: Context) : VpnPlatformController {
         "com.saeed.ikev2vpn.strongswan-profile".toByteArray(Charsets.UTF_8),
     )
     private fun refreshStrongSwanState() {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post(::refreshStrongSwanState)
+            return
+        }
         val service = stateService
         if (service == null) {
             mutableState.update { current ->
@@ -286,6 +317,9 @@ class StrongSwanVpnController(context: Context) : VpnPlatformController {
                     evidence = StateEvidence.STRONGSWAN_SERVICE,
                     confirmed = true,
                     detail = "The strongSwan service is not running.",
+                    sessionId = null,
+                    connectedSinceMillis = null,
+                    traffic = null,
                 )
             }
             return
@@ -312,9 +346,37 @@ class StrongSwanVpnController(context: Context) : VpnPlatformController {
                 evidence = StateEvidence.STRONGSWAN_SERVICE,
                 confirmed = true,
                 detail = error ?: "strongSwan reports ${connectionState.name.lowercase()}.",
-                sessionId = service.connectionID.toString(),
+                sessionId = service.connectionID.toString().takeIf { connectionState in setOf(
+                    ConnectionState.CONNECTED, ConnectionState.CONNECTING, ConnectionState.DISCONNECTING,
+                ) },
+                traffic = it.traffic.takeIf { _ -> connectionState == ConnectionState.CONNECTED &&
+                    it.sessionId == service.connectionID.toString() },
+                connectedSinceMillis = if (connectionState == ConnectionState.CONNECTED) {
+                    it.connectedSinceMillis.takeIf { _ -> it.sessionId == service.connectionID.toString() &&
+                        it.connectionState == ConnectionState.CONNECTED } ?: System.currentTimeMillis()
+                } else null,
                 error = error,
             )
+        }
+    }
+
+    /** Service state and connection ID are main-thread-only; native totals are mutex protected. */
+    private fun refreshTraffic() {
+        val service = stateService
+        val session = service?.connectionID?.toString()
+        val traffic = if (service?.state == VpnStateService.State.CONNECTED) {
+            try {
+                VpnTraffic.fromNative(CharonVpnService.getTrafficSnapshot())
+            } catch (_: LinkageError) {
+                null
+            } catch (_: RuntimeException) {
+                null
+            }
+        } else null
+        mutableState.update { current ->
+            current.copy(traffic = traffic.takeIf {
+                current.connectionState == ConnectionState.CONNECTED && current.confirmed && current.sessionId == session
+            })
         }
     }
 
@@ -346,7 +408,6 @@ class StrongSwanVpnController(context: Context) : VpnPlatformController {
                 }
                 mutableState.update { it.copy(events = (it.events + entries).takeLast(MAX_LOG_ENTRIES)) }
             }
-            refreshStrongSwanState()
         } catch (exception: Exception) {
             mutableState.update {
                 it.copy(detail = "Could not read the strongSwan diagnostic log: ${exception.javaClass.simpleName}")

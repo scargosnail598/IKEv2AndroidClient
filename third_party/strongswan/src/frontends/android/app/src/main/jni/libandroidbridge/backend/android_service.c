@@ -21,6 +21,7 @@
 
 #include "android_jni.h"
 #include "android_service.h"
+#include "android_traffic.h"
 #include "android_dns_proxy.h"
 #include "../charonservice.h"
 #include "../vpnservice_builder.h"
@@ -107,6 +108,10 @@ CALLBACK(deliver_plain, void,
 		return;
 	}
 	len = write(this->tunfd, encoding.ptr, encoding.len);
+	if (len > 0)
+	{
+		android_traffic_add_download(len);
+	}
 	this->lock->unlock(this->lock);
 
 	if (len < 0 || len != encoding.len)
@@ -183,6 +188,7 @@ static job_requeue_t handle_plain(private_android_service_t *this)
 		return JOB_REQUEUE_FAIR;
 	}
 	raw.len = len;
+	android_traffic_add_upload(len);
 
 	packet = ip_packet_create(raw);
 	if (packet)
@@ -940,6 +946,7 @@ android_service_t *android_service_create(android_creds_t *creds,
 {
 	private_android_service_t *this;
 
+	android_traffic_reset();
 	INIT(this,
 		.public = {
 			.listener = {

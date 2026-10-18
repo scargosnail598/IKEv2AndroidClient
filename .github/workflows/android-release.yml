@@ -185,11 +185,16 @@ jobs:
           APK="dist/ikev2-android-v${RELEASE_VERSION}.apk"
           CHECKSUM="${APK}.sha256"
 
+          NOTES_ARGS=(--generate-notes)
+          if [[ -f "releases/${RELEASE_TAG}.md" ]]; then
+            NOTES_ARGS=(--notes-file "releases/${RELEASE_TAG}.md")
+          fi
+
           gh release create "${RELEASE_TAG}" \
             "$APK" \
             "$CHECKSUM" \
             --title "IKEv2 Android Client v${RELEASE_VERSION}" \
-            --generate-notes \
+            "${NOTES_ARGS[@]}" \
             --verify-tag
 
       - name: Remove temporary keystore

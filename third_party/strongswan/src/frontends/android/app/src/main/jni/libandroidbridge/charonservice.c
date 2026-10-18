@@ -30,6 +30,7 @@
 #include "backend/android_private_key.h"
 #include "backend/android_scheduler.h"
 #include "backend/android_service.h"
+#include "backend/android_traffic.h"
 #include "kernel/android_ipsec.h"
 #include "kernel/android_net.h"
 
@@ -767,6 +768,27 @@ JNI_METHOD(CharonVpnService, deinitializeCharon, void)
 	charonservice_deinit(env);
 	libipsec_deinit();
 	library_deinit();
+}
+
+/**
+ * Read TUN totals without accessing the daemon or service lifetime.
+ * Array order: download (VPN -> apps), upload (apps -> VPN).
+ */
+JNI_METHOD(CharonVpnService, getTrafficSnapshot, jlongArray)
+{
+	uint64_t download, upload;
+	jlong values[2];
+	jlongArray result;
+
+	android_traffic_snapshot(&download, &upload);
+	values[0] = (jlong)download;
+	values[1] = (jlong)upload;
+	result = (*env)->NewLongArray(env, 2);
+	if (result)
+	{
+		(*env)->SetLongArrayRegion(env, result, 0, 2, values);
+	}
+	return result;
 }
 
 /**

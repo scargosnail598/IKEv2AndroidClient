@@ -28,6 +28,7 @@ import com.saeed.ikev2vpn.vpn.ProvisioningAction
 import com.saeed.ikev2vpn.vpn.VpnPlatformController
 import com.saeed.ikev2vpn.vpn.VpnResult
 import com.saeed.ikev2vpn.vpn.VpnState
+import com.saeed.ikev2vpn.vpn.VpnTraffic
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -466,6 +467,208 @@ class VpnViewModelTest {
         assertEquals(0, repository.saveCalls)
     }
 
+    @Test
+    fun `profiles remain browsable while connected but cannot mutate the active tunnel`() = runTest {
+        val repository = FakeProfileRepository(provisionedSnapshot(testCertificate()))
+        val controller = FakeVpnController(VpnState(connectionState = ConnectionState.CONNECTED, confirmed = true))
+        val viewModel = createViewModel(repository, controller)
+        viewModel.showProfiles()
+        assertEquals(AppScreen.PROFILES, viewModel.uiState.value.screen)
+        assertFalse(viewModel.uiState.value.canManageProfiles)
+        viewModel.renameProfile("legacy", "New")
+        viewModel.deleteProfile("legacy")
+        viewModel.editProfile("legacy")
+        assertEquals("Saved VPN", repository.current.profile!!.config.profileName)
+        assertEquals(0, controller.deleteCalls)
+        assertEquals(AppScreen.PROFILES, viewModel.uiState.value.screen)
+    }
+
+    @Test
+    fun `rename updates selected metadata without reprovisioning and rolls back an engine rename on failure`() = runTest {
+        val repository = FakeProfileRepository(provisionedSnapshot(testCertificate()))
+        val controller = FakeVpnController()
+        val viewModel = createViewModel(repository, controller)
+        viewModel.showProfiles()
+        viewModel.renameProfile("legacy", "  Work  ")
+        assertEquals("Work", viewModel.uiState.value.profileName)
+        assertEquals("Work", repository.current.profile!!.config.profileName)
+        assertEquals(listOf("Work"), controller.renamedNames)
+        assertEquals(0, controller.provisionCalls)
+        repository.failRename = true
+        viewModel.renameProfile("legacy", "Rejected")
+        assertEquals(listOf("Work", "Rejected", "Work"), controller.renamedNames)
+        assertEquals("Work", repository.current.profile!!.config.profileName)
+        assertFalse(viewModel.uiState.value.isBusy)
+    }
+
+    @Test
+    fun `delete inactive profile removes only its saved data and credential`() = runTest {
+        val first = provisionedSnapshot(testCertificate()).profile!!
+        val second = first.copy(config = first.config.copy(id = "second", profileName = "Second"))
+        val repository = FakeProfileRepository(RepositorySnapshot(profile = first, profiles = listOf(first, second)))
+        val controller = FakeVpnController()
+        val viewModel = createViewModel(repository, controller)
+        viewModel.showProfiles()
+        viewModel.deleteProfile("second")
+        assertEquals(listOf("legacy"), repository.current.profiles.map { it.config.id })
+        assertEquals("legacy", repository.current.profile!!.config.id)
+        assertEquals(setOf("second"), controller.forgottenCredentials)
+        assertEquals(0, controller.deleteCalls)
+        assertTrue(viewModel.uiState.value.configured)
+    }
+
+    @Test
+    fun `delete selected profile clears the engine and shows remaining profiles without activation`() = runTest {
+        val first = provisionedSnapshot(testCertificate()).profile!!
+        val second = first.copy(config = first.config.copy(id = "second", profileName = "Second"))
+        val repository = FakeProfileRepository(RepositorySnapshot(profile = first, profiles = listOf(first, second)))
+        val controller = FakeVpnController()
+        val viewModel = createViewModel(repository, controller)
+        viewModel.deleteProfile("legacy")
+        assertEquals(null, repository.current.profile)
+        assertEquals(listOf("second"), viewModel.uiState.value.profiles.map { it.config.id })
+        assertEquals(AppScreen.PROFILES, viewModel.uiState.value.screen)
+        assertEquals("", viewModel.uiState.value.profileName)
+        assertFalse(viewModel.uiState.value.configured)
+        assertEquals(1, controller.deleteCalls)
+        assertEquals(setOf("legacy"), controller.forgottenCredentials)
+        assertEquals(0, controller.provisionCalls)
+        assertEquals(null, controller.restoredProfile)
+    }
+
+    @Test
+    fun `engine removal failure preserves selected profile and credential`() = runTest {
+        val repository = FakeProfileRepository(provisionedSnapshot(testCertificate()))
+        val controller = FakeVpnController().apply { deleteFails = true }
+        val viewModel = createViewModel(repository, controller)
+        viewModel.deleteProfile("legacy")
+        assertEquals("legacy", repository.current.profile!!.config.id)
+        assertTrue(viewModel.uiState.value.configured)
+        assertTrue(controller.forgottenCredentials.isEmpty())
+        assertFalse(viewModel.uiState.value.isBusy)
+    }
+
+    @Test
+    fun `storage failure after engine removal retains a recoverable profile instead of showing a working VPN`() = runTest {
+        val repository = FakeProfileRepository(provisionedSnapshot(testCertificate())).apply { failDelete = true }
+        val controller = FakeVpnController()
+        val viewModel = createViewModel(repository, controller)
+        viewModel.deleteProfile("legacy")
+        assertEquals(ProvisioningStatus.NEEDS_REPROVISION, repository.current.profile!!.status)
+        assertFalse(viewModel.uiState.value.configured)
+        assertTrue(controller.forgottenCredentials.isEmpty())
+        assertFalse(viewModel.uiState.value.isBusy)
+    }
+
+    @Test
+    fun `editing an inactive profile reuses its password only when saved and preserves other profiles`() = runTest {
+        val first = provisionedSnapshot(testCertificate()).profile!!
+        val second = first.copy(config = first.config.copy(id = "second", profileName = "Second"))
+        val repository = FakeProfileRepository(RepositorySnapshot(profile = first, profiles = listOf(first, second)))
+        val controller = FakeVpnController()
+        val viewModel = createViewModel(repository, controller)
+        viewModel.editProfile("second")
+        assertEquals("legacy", repository.current.profile!!.config.id)
+        assertEquals(null, controller.restoredProfile)
+        assertTrue(viewModel.uiState.value.canReuseSavedPassword)
+        viewModel.updateProfileName("Work")
+        viewModel.provisionProfile("")
+        assertEquals("second", controller.restoredProfile!!.id)
+        assertEquals("Work", repository.current.profile!!.config.profileName)
+        assertTrue(repository.current.profiles.any { it.config.id == "legacy" })
+        assertEquals(0, controller.connectCalls)
+    }
+
+    @Test
+    fun `editing without a stored credential still requires a password`() = runTest {
+        val repository = FakeProfileRepository(provisionedSnapshot(testCertificate()))
+        val controller = FakeVpnController().apply { savedCredentialAvailable = false }
+        val viewModel = createViewModel(repository, controller)
+        viewModel.showSetup()
+        assertFalse(viewModel.uiState.value.canReuseSavedPassword)
+        viewModel.provisionProfile("")
+        assertTrue(ProfileField.PASSWORD in viewModel.uiState.value.fieldErrors)
+        assertEquals(0, controller.provisionCalls)
+    }
+
+    @Test
+    fun `home screen is available without a profile and cancelling first setup returns to profiles`() = runTest {
+        val viewModel = createViewModel(FakeProfileRepository(RepositorySnapshot()), FakeVpnController())
+        assertEquals(AppScreen.MAIN, viewModel.uiState.value.screen)
+        viewModel.addProfile()
+        viewModel.updateProfileName("Unsaved")
+        viewModel.showProfiles()
+        assertEquals(AppScreen.PROFILES, viewModel.uiState.value.screen)
+        assertTrue(viewModel.uiState.value.profiles.isEmpty())
+        assertEquals("", viewModel.uiState.value.profileName)
+    }
+
+    @Test
+    fun `session data follows current tunnel state and is cleared after disconnect`() = runTest {
+        val repository = FakeProfileRepository(provisionedSnapshot(testCertificate()))
+        val controller = FakeVpnController(VpnState(connectionState = ConnectionState.CONNECTED, confirmed = true,
+            sessionId = "session-one", connectedSinceMillis = 1234L))
+        val viewModel = createViewModel(repository, controller)
+        assertEquals("session-one", viewModel.uiState.value.sessionId)
+        assertEquals(1234L, viewModel.uiState.value.connectedSinceMillis)
+        viewModel.showProfiles()
+        viewModel.showMain()
+        assertEquals(1234L, viewModel.uiState.value.connectedSinceMillis)
+        controller.state.value = controller.state.value.copy(connectionState = ConnectionState.DISCONNECTED)
+        assertEquals(null, viewModel.uiState.value.sessionId)
+        assertEquals(null, viewModel.uiState.value.connectedSinceMillis)
+    }
+
+    @Test
+    fun `renaming an imported draft keeps included credentials ready for explicit save`() = runTest {
+        val controller = FakeVpnController()
+        val viewModel = createViewModel(FakeProfileRepository(RepositorySnapshot()), controller)
+        viewModel.importConfigurationLink(IkevShareDecoderTest.fixture("public-password"))
+        viewModel.updateProfileName("Work")
+        assertTrue(viewModel.uiState.value.hasImportedPassword)
+        assertTrue(viewModel.uiState.value.importedProfileInfo != null)
+        assertEquals(0, controller.provisionCalls)
+        viewModel.provisionProfile("")
+        assertEquals(IkevShareDecoderTest.PASSWORD, controller.provisionedPassword)
+    }
+
+    @Test
+    fun `traffic updates live without saving profiles and resets on reconnect`() = runTest {
+        val repository = FakeProfileRepository(provisionedSnapshot(testCertificate()))
+        val controller = FakeVpnController(VpnState(connectionState = ConnectionState.CONNECTED, confirmed = true,
+            sessionId = "first", traffic = VpnTraffic(500, 100)))
+        val viewModel = createViewModel(repository, controller)
+        assertEquals(VpnTraffic(500, 100), viewModel.uiState.value.traffic)
+        controller.state.value = controller.state.value.copy(traffic = VpnTraffic(1500, 300))
+        assertEquals(VpnTraffic(1500, 300), viewModel.uiState.value.traffic)
+        viewModel.showProfiles()
+        viewModel.showMain()
+        assertEquals(VpnTraffic(1500, 300), viewModel.uiState.value.traffic)
+        repository.recordError("Unrelated diagnostic update", "No secret")
+        assertEquals(VpnTraffic(1500, 300), viewModel.uiState.value.traffic)
+        assertEquals(0, repository.saveCalls)
+
+        // Defensively hide stale totals even if the engine includes them in a stopped state.
+        controller.state.value = controller.state.value.copy(connectionState = ConnectionState.DISCONNECTED)
+        assertEquals(null, viewModel.uiState.value.traffic)
+        controller.state.value = controller.state.value.copy(connectionState = ConnectionState.CONNECTING, sessionId = "second")
+        assertEquals(null, viewModel.uiState.value.traffic)
+        controller.state.value = controller.state.value.copy(connectionState = ConnectionState.CONNECTED, traffic = null)
+        assertEquals(null, viewModel.uiState.value.traffic)
+        controller.state.value = controller.state.value.copy(traffic = VpnTraffic(0, 0))
+        assertEquals(VpnTraffic(0, 0), viewModel.uiState.value.traffic)
+    }
+
+    @Test
+    fun `traffic is hidden without a configured profile or confirmed connection`() = runTest {
+        val engineState = VpnState(connectionState = ConnectionState.CONNECTED, confirmed = true, traffic = VpnTraffic(100, 50))
+        val unconfigured = createViewModel(FakeProfileRepository(RepositorySnapshot()), FakeVpnController(engineState))
+        assertEquals(null, unconfigured.uiState.value.traffic)
+        val unconfirmed = createViewModel(FakeProfileRepository(provisionedSnapshot(testCertificate())),
+            FakeVpnController(engineState.copy(confirmed = false)))
+        assertEquals(null, unconfirmed.uiState.value.traffic)
+    }
+
     private fun shareDecoder() = IkevShareDecoder(IkevProfileParser(CertificateLoader {
         Date.from(Instant.parse("2030-01-01T00:00:00Z"))
     }))
@@ -512,6 +715,8 @@ class VpnViewModelTest {
         private val mutableSnapshots = MutableStateFlow(initial)
         override val snapshots: Flow<RepositorySnapshot> = mutableSnapshots
         val current: RepositorySnapshot get() = mutableSnapshots.value
+        var failRename = false
+        var failDelete = false
         var failSave = false
         var saveCalls = 0
 
@@ -547,6 +752,20 @@ class VpnViewModelTest {
             mutableSnapshots.value = mutableSnapshots.value.copy(profile = profile.copy(status = status))
         }
 
+        override suspend fun renameProfile(id: String, name: String) {
+            if (failRename) error("Simulated rename failure")
+            val all = (current.profiles + listOfNotNull(current.profile)).associateBy { it.config.id }.values.map {
+                if (it.config.id == id) it.copy(config = it.config.copy(profileName = name)) else it
+            }
+            mutableSnapshots.value = current.copy(profile = all.firstOrNull { it.config.id == current.profile?.config?.id }, profiles = all)
+        }
+
+        override suspend fun deleteProfile(id: String) {
+            if (failDelete) error("Simulated removal failure")
+            val all = (current.profiles + listOfNotNull(current.profile)).associateBy { it.config.id }.values.filter { it.config.id != id }
+            mutableSnapshots.value = current.copy(profile = current.profile?.takeUnless { it.config.id == id }, profiles = all)
+        }
+
         override suspend fun recordError(userMessage: String, technicalMessage: String) {
             mutableSnapshots.value = mutableSnapshots.value.copy(
                 diagnostics = StoredDiagnostics(
@@ -566,6 +785,10 @@ class VpnViewModelTest {
     ) : VpnPlatformController {
         private val mutableState = MutableStateFlow(initialState)
         override val state = mutableState
+        var connectCalls = 0
+        var deleteFails = false
+        val forgottenCredentials = mutableSetOf<String>()
+        val renamedNames = mutableListOf<String>()
         var deleteCalls = 0
         var provisionCalls = 0
         var provisionedPassword: String? = null
@@ -594,12 +817,14 @@ class VpnViewModelTest {
             return VpnResult.Success(ProvisioningAction.Complete)
         }
 
-        override fun connect(): VpnResult<String?> = VpnResult.Success(null)
+        override fun forgetProfileCredential(profileId: String) { forgottenCredentials += profileId }
+        override fun renameProvisionedProfile(name: String): VpnResult<Unit> { renamedNames += name; return VpnResult.Success(Unit) }
+        override fun connect(): VpnResult<String?> { connectCalls++; return VpnResult.Success(null) }
         override fun disconnect(): VpnResult<Unit> = VpnResult.Success(Unit)
 
         override fun deleteProvisionedProfile(): VpnResult<Unit> {
             deleteCalls += 1
-            return VpnResult.Success(Unit)
+            return if (deleteFails) VpnResult.Failure("Could not remove profile", "Simulated removal failure") else VpnResult.Success(Unit)
         }
 
         override fun refreshState() = Unit

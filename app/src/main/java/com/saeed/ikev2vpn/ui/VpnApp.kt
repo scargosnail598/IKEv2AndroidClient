@@ -10,6 +10,9 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.material3.*
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
@@ -26,10 +29,26 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 @Composable
 fun VpnApp(
     viewModel: VpnViewModel,
+    updateViewModel: com.saeed.ikev2vpn.update.AppUpdateViewModel,
     darkMode: Boolean,
     onDarkModeChanged: (Boolean) -> Unit,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val updateState by updateViewModel.state.collectAsStateWithLifecycle()
+    val updatePermission = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        updateViewModel.onInstallPermissionResult()
+    }
+    val updateInstaller = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { }
+    LaunchedEffect(updateViewModel) {
+        updateViewModel.effects.collect { effect ->
+            try {
+                when (effect) {
+                    is com.saeed.ikev2vpn.update.UpdateEffect.AllowInstallation -> updatePermission.launch(effect.intent)
+                    is com.saeed.ikev2vpn.update.UpdateEffect.OpenInstaller -> updateInstaller.launch(effect.intent)
+                }
+            } catch (_: Exception) { updateViewModel.launchFailed() }
+        }
+    }
     val context = LocalContext.current
     var linkDialogOpen by remember { mutableStateOf(false) }
     val qrImagePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -82,9 +101,11 @@ fun VpnApp(
     }
 
     BackHandler(
-        enabled = state.screen != AppScreen.MAIN && (state.configured || state.isBusy),
+        enabled = state.screen != AppScreen.MAIN,
     ) {
-        if (!state.isBusy) viewModel.showMain()
+        if (!state.isBusy) {
+            if (state.screen == AppScreen.SETUP) viewModel.showProfiles() else viewModel.showMain()
+        }
     }
 
     if (!state.initialized) {
@@ -98,42 +119,56 @@ fun VpnApp(
         ProfilePasswordDialog(name, viewModel::cancelProfilePassword, viewModel::submitProfilePassword)
     }
 
-    when (state.screen) {
-        AppScreen.SETUP -> SetupScreen(
-            state = state,
-            onSelectProfile = viewModel::selectProfile,
-            onAddProfile = viewModel::addProfile,
-            onProfileNameChanged = viewModel::updateProfileName,
-            onServerChanged = viewModel::updateServerAddress,
-            onUsernameChanged = viewModel::updateUsername,
-            onAppRoutingModeChanged = viewModel::updateAppRoutingMode,
-            onToggleApplication = viewModel::toggleApplication,
-            onImportLink = { linkDialogOpen = true },
-            onScanQr = { qrScanner.launch(Intent(context, QrScannerActivity::class.java)) },
-            onImportQrImage = { qrImagePicker.launch(arrayOf("image/*")) },
-            onReplaceImportedProfile = viewModel::replaceImportedProfile,
-            onImportIkevProfile = { ikevProfilePicker.launch(arrayOf("*/*")) },
-            onImportCertificate = { certificatePicker.launch(arrayOf("*/*")) },
-            onProvision = viewModel::provisionProfile,
-            onBack = viewModel::showMain,
-            onDismissError = viewModel::dismissError,
-        )
-        AppScreen.MAIN -> MainScreen(
-            state = state,
-            onSelectProfile = viewModel::selectProfile,
-            onAddProfile = viewModel::addProfile,
-            onConnect = viewModel::connect,
-            onDisconnect = viewModel::disconnect,
-            onEdit = viewModel::showSetup,
-            onDiagnostics = viewModel::showDiagnostics,
-            darkMode = darkMode,
-            onDarkModeChanged = onDarkModeChanged,
-            onDismissError = viewModel::dismissError,
-        )
-        AppScreen.DIAGNOSTICS -> DiagnosticsScreen(
-            state = state,
-            onBack = viewModel::showMain,
-            onClearLog = viewModel::clearConnectionLog,
-        )
+    val rootScreen = state.screen == AppScreen.MAIN || state.screen == AppScreen.PROFILES
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        bottomBar = {
+            if (rootScreen) NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+                NavigationBarItem(selected = state.screen == AppScreen.MAIN,
+                    onClick = viewModel::showMain, icon = { Icon(VpnIcons.Shield, null) }, label = { Text("Connection") })
+                NavigationBarItem(selected = state.screen == AppScreen.PROFILES,
+                    onClick = viewModel::showProfiles, icon = { Icon(VpnIcons.Profiles, null) }, label = { Text("Profiles") })
+            }
+        },
+    ) { padding ->
+        Box(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)) {
+            when (state.screen) {
+                AppScreen.SETUP -> SetupScreen(
+                    state = state,
+                    onProfileNameChanged = viewModel::updateProfileName,
+                    onServerChanged = viewModel::updateServerAddress,
+                    onUsernameChanged = viewModel::updateUsername,
+                    onAppRoutingModeChanged = viewModel::updateAppRoutingMode,
+                    onToggleApplication = viewModel::toggleApplication,
+                    onImportLink = { linkDialogOpen = true },
+                    onScanQr = { qrScanner.launch(Intent(context, QrScannerActivity::class.java)) },
+                    onImportQrImage = { qrImagePicker.launch(arrayOf("image/*")) },
+                    onReplaceImportedProfile = viewModel::replaceImportedProfile,
+                    onImportIkevProfile = { ikevProfilePicker.launch(arrayOf("*/*")) },
+                    onImportCertificate = { certificatePicker.launch(arrayOf("*/*")) },
+                    onProvision = viewModel::provisionProfile,
+                    onBack = viewModel::showProfiles,
+                    onDismissError = viewModel::dismissError,
+                )
+                AppScreen.MAIN -> MainScreen(
+                    state = state, onProfiles = viewModel::showProfiles, onAddProfile = viewModel::addProfile,
+                    onConnect = viewModel::connect, onDisconnect = viewModel::disconnect,
+                    onDiagnostics = viewModel::showDiagnostics, darkMode = darkMode,
+                    onDarkModeChanged = onDarkModeChanged, onDismissError = viewModel::dismissError,
+                    onAbout = viewModel::showAbout,
+                    onCheckUpdates = { viewModel.showAbout(); updateViewModel.check() },
+                )
+                AppScreen.PROFILES -> ProfilesScreen(
+                    state, viewModel::selectProfile, viewModel::addProfile, viewModel::editProfile,
+                    viewModel::renameProfile, viewModel::deleteProfile, viewModel::dismissError,
+                )
+                AppScreen.ABOUT -> AboutScreen(updateState, viewModel::showMain,
+                    updateViewModel::check, updateViewModel::download, updateViewModel::cancelDownload,
+                    updateViewModel::install, updateViewModel::dismissError)
+                AppScreen.DIAGNOSTICS -> DiagnosticsScreen(
+                    state = state, onBack = viewModel::showMain, onClearLog = viewModel::clearConnectionLog,
+                )
+            }
+        }
     }
 }

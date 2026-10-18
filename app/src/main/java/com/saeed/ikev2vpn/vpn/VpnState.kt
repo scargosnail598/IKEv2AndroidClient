@@ -25,6 +25,8 @@ data class VpnState(
     val confirmed: Boolean = false,
     val detail: String = "No active VPN session has been confirmed.",
     val sessionId: String? = null,
+    val connectedSinceMillis: Long? = null,
+    val traffic: VpnTraffic? = null,
     val error: String? = null,
     val events: List<VpnLogEntry> = emptyList(),
 )

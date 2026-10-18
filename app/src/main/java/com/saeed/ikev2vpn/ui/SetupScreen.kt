@@ -1,38 +1,15 @@
 package com.saeed.ikev2vpn.ui
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -41,252 +18,147 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.saeed.ikev2vpn.validation.ProfileField
+import com.saeed.ikev2vpn.validation.ProfileValidator
 
 @Composable
 fun SetupScreen(
     state: VpnUiState,
-    onSelectProfile: (String) -> Unit,
-    onAddProfile: () -> Unit,
-    onProfileNameChanged: (String) -> Unit,
-    onServerChanged: (String) -> Unit,
-    onUsernameChanged: (String) -> Unit,
-    onAppRoutingModeChanged: (com.saeed.ikev2vpn.data.AppRoutingMode) -> Unit,
-    onToggleApplication: (String) -> Unit,
-    onImportIkevProfile: () -> Unit,
-    onImportLink: () -> Unit,
-    onScanQr: () -> Unit,
-    onImportQrImage: () -> Unit,
-    onReplaceImportedProfile: (String?) -> Unit,
-    onImportCertificate: () -> Unit,
-    onProvision: (String) -> Unit,
-    onBack: () -> Unit,
-    onDismissError: () -> Unit,
+    onProfileNameChanged: (String) -> Unit, onServerChanged: (String) -> Unit, onUsernameChanged: (String) -> Unit,
+    onAppRoutingModeChanged: (com.saeed.ikev2vpn.data.AppRoutingMode) -> Unit, onToggleApplication: (String) -> Unit,
+    onImportIkevProfile: () -> Unit, onImportLink: () -> Unit, onScanQr: () -> Unit, onImportQrImage: () -> Unit,
+    onReplaceImportedProfile: (String?) -> Unit, onImportCertificate: () -> Unit,
+    onProvision: (String) -> Unit, onBack: () -> Unit, onDismissError: () -> Unit,
 ) {
     var password by remember { mutableStateOf("") }
+    var manual by rememberSaveable(state.draftRevision) { mutableStateOf(state.isEditingProfile) }
+    var connectionExpanded by rememberSaveable(state.draftRevision) { mutableStateOf(state.isEditingProfile) }
+    var appsExpanded by rememberSaveable(state.draftRevision) { mutableStateOf(false) }
+    var certificateExpanded by rememberSaveable(state.draftRevision) { mutableStateOf(false) }
+    var methodsOpen by remember { mutableStateOf(false) }
     var confirmSave by remember { mutableStateOf(false) }
     var chooseReplacement by remember { mutableStateOf(false) }
+    val ready = manual || state.importedProfileInfo != null || state.isEditingProfile || state.serverAddress.isNotBlank()
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(state.draftRevision) { password = ""; confirmSave = false; chooseReplacement = false; methodsOpen = false }
+    LaunchedEffect(state.fieldErrors) {
+        if (state.fieldErrors.keys.any { it in setOf(ProfileField.SERVER_ADDRESS, ProfileField.USERNAME) }) connectionExpanded = true
+        if (ProfileField.CERTIFICATE in state.fieldErrors) certificateExpanded = true
+        if (ProfileField.APPLICATIONS in state.fieldErrors) appsExpanded = true
+    }
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) { password = ""; confirmSave = false; methodsOpen = false }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer); password = "" }
+    }
     fun save() {
         val value = password
-        password = ""
-        confirmSave = false
+        password = ""; confirmSave = false
         onProvision(value)
     }
-    if (confirmSave) {
-        AlertDialog(
-            onDismissRequest = { confirmSave = false },
-            title = { Text(when {
-                state.importedProfileInfo == null -> "Save VPN profile?"
-                state.importReplacementProfileId == null -> "Save new profile?"
-                else -> "Replace saved profile?"
-            }) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Server: ${state.serverAddress}\nIdentity: ${state.importedProfileInfo?.remoteId ?: state.serverAddress}\nUsername: ${state.username}")
-                    if (state.certificateInfo != null) {
-                        Text("Trust this private CA only if you trust the profile's sender. Compare its SHA-256 fingerprint through a trusted channel:")
-                        Text(state.certificateInfo.sha256Fingerprint, style = MaterialTheme.typography.bodySmall)
-                    } else {
-                        Text("The server certificate will be checked against trusted public certificate authorities.")
-                    }
-                    if (state.importReplacementProfileId != null) Text("The selected saved profile and its credentials will be replaced.")
-                }
-            },
-            confirmButton = { TextButton(onClick = ::save) { Text("Confirm and save") } },
-            dismissButton = { TextButton(onClick = { confirmSave = false }) { Text("Cancel") } },
-        )
+    fun reviewSave() {
+        val validation = ProfileValidator.validate(state.profileName, state.serverAddress, state.username,
+            password.ifEmpty { if (state.hasImportedPassword || state.canReuseSavedPassword) "saved-credential" else "" },
+            state.certificateInfo != null || state.usesPublicCertificateTrust, state.appRouting)
+        if (!validation.isValid) { onProvision(password); return }
+        val trusted = state.profiles.any { it.certificate?.info?.sha256Fingerprint == state.certificateInfo?.sha256Fingerprint }
+        if (state.importReplacementProfileId != null || (state.certificateInfo != null && (!trusted || state.importedProfileInfo != null))) confirmSave = true
+        else save()
     }
-    if (chooseReplacement) {
-        AlertDialog(
-            onDismissRequest = { chooseReplacement = false },
-            title = { Text("Replace a matching profile") },
-            text = {
-                Column {
-                    state.profiles.filter { it.config.serverAddress == state.serverAddress && it.config.username == state.username }.forEach { profile ->
-                        TextButton(onClick = { onReplaceImportedProfile(profile.config.id); chooseReplacement = false }) {
-                            Text(profile.config.profileName)
+    if (confirmSave) AlertDialog(
+        onDismissRequest = { confirmSave = false }, title = { Text(if (state.importReplacementProfileId != null) "Replace this profile?" else "Trust this profile?") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                DetailRow("Server", state.serverAddress); DetailRow("Account", state.username)
+                if (state.certificateInfo != null) {
+                    Text("Only continue if you trust the sender. Compare this CA fingerprint with a trusted source.", style = MaterialTheme.typography.bodyMedium)
+                    Text(state.certificateInfo.sha256Fingerprint, style = MaterialTheme.typography.bodySmall)
+                }
+                if (state.importReplacementProfileId != null) Text("The saved configuration and password will be replaced.")
+            }
+        }, confirmButton = { TextButton(onClick = ::save) { Text("Confirm and save") } },
+        dismissButton = { TextButton(onClick = { confirmSave = false }) { Text("Cancel") } },
+    )
+    if (chooseReplacement) AlertDialog(onDismissRequest = { chooseReplacement = false }, title = { Text("Replace a saved profile") },
+        text = { Column(Modifier.verticalScroll(rememberScrollState())) {
+            state.profiles.filter { it.config.serverAddress == state.serverAddress && it.config.username == state.username }.forEach { profile ->
+                TextButton(onClick = { onReplaceImportedProfile(profile.config.id); chooseReplacement = false }) { Text(profile.config.profileName) }
+            }
+        } }, confirmButton = { TextButton(onClick = { chooseReplacement = false }) { Text("Cancel") } })
+    if (methodsOpen) AlertDialog(onDismissRequest = { methodsOpen = false }, title = { Text("Import a profile") },
+        text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            ImportMethods(onImportLink = { methodsOpen = false; onImportLink() }, onScanQr = { methodsOpen = false; onScanQr() },
+                onImportFile = { methodsOpen = false; onImportIkevProfile() }, onImportImage = { methodsOpen = false; onImportQrImage() }, enabled = !state.isBusy)
+        } }, confirmButton = { TextButton(onClick = { methodsOpen = false }) { Text("Cancel") } })
+
+    Column(Modifier.fillMaxSize().imePadding()) {
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp)) {
+            ScreenHeader(when { state.isEditingProfile -> "Edit profile"; ready -> "Review profile"; else -> "Add profile" },
+                onBack = onBack, backEnabled = !state.isBusy) {
+                if (ready && !state.isEditingProfile) TextButton(onClick = { methodsOpen = true }, enabled = !state.isBusy) { Text("Import another") }
+            }
+            state.error?.let { ErrorCard(it, onDismissError) }
+            if (!state.platformSupported) Text("The VPN engine is unavailable on this device.", color = MaterialTheme.colorScheme.error)
+            if (!ready) {
+                Text("Add the configuration provided by your VPN administrator.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                ImportMethods(onImportLink, onScanQr, onImportIkevProfile, onImportQrImage, !state.isBusy)
+                TextButton(onClick = { manual = true; connectionExpanded = true }, enabled = !state.isBusy, modifier = Modifier.fillMaxWidth()) {
+                    Text("Set up manually")
+                }
+                if (state.isBusy) LinearProgressIndicator(Modifier.fillMaxWidth())
+            } else {
+                OutlinedTextField(state.profileName, onProfileNameChanged, Modifier.fillMaxWidth(), label = { Text("Profile name") },
+                    singleLine = true, enabled = !state.isBusy, isError = ProfileField.PROFILE_NAME in state.fieldErrors,
+                    supportingText = state.fieldErrors[ProfileField.PROFILE_NAME]?.let { { Text(it) } })
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text("Connection", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
+                            TextButton(onClick = { connectionExpanded = !connectionExpanded }, enabled = !state.isBusy) {
+                                Text(if (connectionExpanded) "Done" else "Edit")
+                            }
+                        }
+                        if (connectionExpanded) {
+                            OutlinedTextField(state.serverAddress, onServerChanged, Modifier.fillMaxWidth(), label = { Text("Server address") },
+                                placeholder = { Text("vpn.example.com") }, singleLine = true, enabled = !state.isBusy,
+                                isError = ProfileField.SERVER_ADDRESS in state.fieldErrors,
+                                supportingText = state.fieldErrors[ProfileField.SERVER_ADDRESS]?.let { { Text(it) } })
+                            OutlinedTextField(state.username, onUsernameChanged, Modifier.fillMaxWidth(), label = { Text("Username") },
+                                singleLine = true, enabled = !state.isBusy, isError = ProfileField.USERNAME in state.fieldErrors,
+                                supportingText = state.fieldErrors[ProfileField.USERNAME]?.let { { Text(it) } })
+                        } else {
+                            DetailRow("Server", state.serverAddress.ifBlank { "Not set" })
+                            DetailRow("Account", state.username.ifBlank { "Not set" })
                         }
                     }
                 }
-            },
-            confirmButton = { TextButton(onClick = { chooseReplacement = false }) { Text("Cancel") } },
-        )
-    }
-    val hasDraftProfile = state.profileName.isNotBlank() ||
-        state.serverAddress.isNotBlank() ||
-        state.username.isNotBlank() ||
-        state.certificateInfo != null
-    var manualSetupExpanded by rememberSaveable {
-        mutableStateOf(
-            state.configured || (state.importedProfileInfo == null && hasDraftProfile),
-        )
-    }
-    LaunchedEffect(state.draftRevision, state.selectedProfileId, state.importedProfileInfo?.importRevision) {
-        password = ""
-        confirmSave = false
-        chooseReplacement = false
-        manualSetupExpanded = state.importedProfileInfo == null && hasDraftProfile
-        if (state.importedProfileInfo != null) {
-            manualSetupExpanded = false
-        }
-    }
-    LaunchedEffect(state.fieldErrors) {
-        if (state.fieldErrors.keys.any { it in MANUAL_PROFILE_FIELDS }) {
-            manualSetupExpanded = true
-        }
-    }
-    val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_STOP) {
-                password = ""
-                confirmSave = false
-                chooseReplacement = false
+                PasswordSection(password, { password = it }, state.fieldErrors[ProfileField.PASSWORD], state.importedProfileInfo != null,
+                    state.hasImportedPassword, state.canReuseSavedPassword, enabled = !state.isBusy)
+                Disclosure("Apps using VPN", state.appRouting.summary(), VpnIcons.Apps, appsExpanded, { appsExpanded = !appsExpanded }) {
+                    AppRoutingSection(state, onAppRoutingModeChanged, onToggleApplication)
+                }
+                Disclosure("Server certificate", if (state.usesPublicCertificateTrust) "Public certificate authorities" else state.certificateInfo?.displayName ?: "Certificate required",
+                    VpnIcons.Lock, certificateExpanded, { certificateExpanded = !certificateExpanded }) { CertificateSection(state, onImportCertificate) }
+                state.importedProfileInfo?.let {
+                    if (state.profiles.any { p -> p.config.serverAddress == state.serverAddress && p.config.username == state.username }) {
+                        Text(if (state.importReplacementProfileId == null) "A profile for this account already exists. This import will be saved as a new profile." else "This import will replace the selected saved profile.",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        TextButton(onClick = { if (state.importReplacementProfileId == null) chooseReplacement = true else onReplaceImportedProfile(null) }) {
+                            Text(if (state.importReplacementProfileId == null) "Replace existing profile instead" else "Save as new instead")
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
             }
         }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-            password = ""
-        }
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .verticalScroll(rememberScrollState())
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp),
-    ) {
-        ProfileSelector(state, onSelectProfile, onAddProfile)
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = if (hasDraftProfile) "Edit VPN Profile" else "Set Up IKEv2 VPN",
-                    style = MaterialTheme.typography.headlineMedium,
-                )
-                Text(
-                    text = "IKEv2 / IPsec with EAP-MSCHAPv2. Import a profile, enter your " +
-                        "password, and connect through strongSwan.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            if (state.configured) {
-                TextButton(onClick = onBack, enabled = !state.isBusy) { Text("Cancel") }
-            }
-        }
-
-        if (!state.platformSupported) {
-            MessageCard(
-                message = "This device does not support strongSwan VPN tunnels.",
-                isError = true,
-            )
-        }
-        state.error?.let { error ->
-            ErrorCard(message = error, onDismiss = onDismissError)
-        }
-
-        Button(
-            onClick = onImportIkevProfile,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(52.dp),
-            enabled = !state.isBusy,
-        ) {
-            Text("Import .ikev Profile")
-        }
-
-        OutlinedButton(onClick = onImportLink, modifier = Modifier.fillMaxWidth(), enabled = !state.isBusy) {
-            Text("Import configuration link")
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            OutlinedButton(onClick = onScanQr, modifier = Modifier.weight(1f), enabled = !state.isBusy) { Text("Scan QR") }
-            OutlinedButton(onClick = onImportQrImage, modifier = Modifier.weight(1f), enabled = !state.isBusy) { Text("QR image") }
-        }
-
-        if (state.importedProfileInfo != null) {
-            val replacing = state.profiles.firstOrNull { it.config.id == state.importReplacementProfileId }
-            Text(if (replacing == null) "This import will create a new profile." else "Replacing: ${replacing.config.profileName}")
-            if (replacing != null) {
-                TextButton(onClick = { onReplaceImportedProfile(null) }) { Text("Save as new profile instead") }
-            } else if (state.profiles.any { it.config.serverAddress == state.serverAddress && it.config.username == state.username }) {
-                TextButton(onClick = { chooseReplacement = true }) { Text("Replace a matching saved profile…") }
-            }
-        }
-
-        if (!manualSetupExpanded && (state.importedProfileInfo != null || hasDraftProfile)) {
-            ProfileSummaryCard(
-                state = state,
-                imported = state.importedProfileInfo != null,
-            )
-        }
-
-        TextButton(
-            onClick = { manualSetupExpanded = !manualSetupExpanded },
-            modifier = Modifier.align(Alignment.CenterHorizontally),
-            enabled = !state.isBusy,
-        ) {
-            Text(
-                when {
-                    manualSetupExpanded -> "Hide manual configuration"
-                    state.importedProfileInfo != null -> "Edit fields manually"
-                    hasDraftProfile -> "Edit profile fields"
-                    else -> "Configure manually instead"
-                },
-            )
-        }
-
-        if (manualSetupExpanded) {
-            ManualProfileFields(
-                state = state,
-                onProfileNameChanged = onProfileNameChanged,
-                onServerChanged = onServerChanged,
-                onUsernameChanged = onUsernameChanged,
-            )
-        }
-
-        val showProvisioningControls = state.importedProfileInfo != null ||
-            manualSetupExpanded ||
-            state.configured ||
-            hasDraftProfile
-        if (showProvisioningControls) {
-            AppRoutingSection(state, onAppRoutingModeChanged, onToggleApplication)
-
-            PasswordSection(
-                password = password,
-                onPasswordChanged = { password = it },
-                error = state.fieldErrors[ProfileField.PASSWORD],
-                importedProfileReady = state.importedProfileInfo != null,
-                hasImportedPassword = state.hasImportedPassword,
-            )
-
-            CertificateSection(
-                state = state,
-                onImportCertificate = onImportCertificate,
-            )
-
-            Button(
-                onClick = {
-                    if (state.importedProfileInfo != null || state.certificateInfo != null) confirmSave = true else save()
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp),
-                enabled = state.platformSupported && !state.isBusy,
-            ) {
-                if (state.isBusy) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.height(22.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.onPrimary,
-                    )
-                } else {
-                    Text("Save / Provision VPN")
+        if (ready) Surface(shadowElevation = 2.dp) {
+            Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Button(onClick = ::reviewSave, enabled = state.platformSupported && !state.isBusy,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
+                    if (state.isBusy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                    else Text(if (state.isEditingProfile && state.editingProfileId != state.selectedProfileId) "Save and select profile" else "Save profile")
                 }
             }
         }
@@ -294,120 +166,27 @@ fun SetupScreen(
 }
 
 @Composable
-private fun ProfileSummaryCard(state: VpnUiState, imported: Boolean) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainer,
-        ),
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Text(
-                text = if (imported) "Profile imported" else "Profile details",
-                style = MaterialTheme.typography.titleMedium,
-            )
-            Text(
-                text = if (imported) "Ready to provision" else "Manual configuration",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.primary,
-            )
-            ProfileSummaryRow("Profile name", state.profileName)
-            ProfileSummaryRow("Server", state.serverAddress)
-            ProfileSummaryRow("Username", state.username)
-            state.importedProfileInfo?.let {
-                ProfileSummaryRow("Remote ID", it.remoteId)
-                ProfileSummaryRow("Server profile", it.serverProfile)
-                Text(it.proxySummary, style = MaterialTheme.typography.bodySmall)
+private fun ImportMethods(onImportLink: () -> Unit, onScanQr: () -> Unit, onImportFile: () -> Unit, onImportImage: () -> Unit, enabled: Boolean) {
+    ActionRow(VpnIcons.Link, "Paste a link", "Import an ikev:// configuration link", onImportLink, enabled)
+    ActionRow(VpnIcons.Qr, "Scan a QR code", "Use your camera", onScanQr, enabled)
+    ActionRow(VpnIcons.File, "Choose a file", "Import an .ikev profile", onImportFile, enabled)
+    ActionRow(VpnIcons.Photo, "Choose a QR image", "Use a saved image or screenshot", onImportImage, enabled)
+}
+
+@Composable
+private fun Disclosure(title: String, subtitle: String, icon: ImageVector, expanded: Boolean, onToggle: () -> Unit, content: @Composable () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Surface(onClick = onToggle, shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surface) {
+            Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Icon(icon, null, Modifier.size(22.dp), tint = MaterialTheme.colorScheme.primary)
+                Column(Modifier.weight(1f)) {
+                    Text(title, style = MaterialTheme.typography.titleSmall)
+                    Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Text(if (expanded) "Hide" else "Edit", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
             }
-            ProfileSummaryRow("Trust", if (state.usesPublicCertificateTrust) "Public certificate authorities" else "Private CA")
-            ProfileSummaryRow("Certificate", state.certificateInfo?.displayName.orEmpty())
         }
-    }
-}
-
-@Composable
-private fun ProfileSummaryRow(label: String, value: String) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Text(
-            text = label,
-            modifier = Modifier.weight(0.36f),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Text(
-            text = value.ifBlank { "Not set" },
-            modifier = Modifier.weight(0.64f),
-            style = MaterialTheme.typography.bodyMedium,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-}
-
-@Composable
-private fun ManualProfileFields(
-    state: VpnUiState,
-    onProfileNameChanged: (String) -> Unit,
-    onServerChanged: (String) -> Unit,
-    onUsernameChanged: (String) -> Unit,
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-        ),
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text("Manual profile details", style = MaterialTheme.typography.titleMedium)
-            Text(
-                "Use these fields when you do not have an .ikev profile.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            OutlinedTextField(
-                value = state.profileName,
-                onValueChange = onProfileNameChanged,
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("Profile Name") },
-                singleLine = true,
-                isError = ProfileField.PROFILE_NAME in state.fieldErrors,
-                supportingText = state.fieldErrors[ProfileField.PROFILE_NAME]?.let { message ->
-                    { Text(message) }
-                },
-            )
-            OutlinedTextField(
-                value = state.serverAddress,
-                onValueChange = onServerChanged,
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("Server Address") },
-                placeholder = { Text("vpn.example.com") },
-                singleLine = true,
-                isError = ProfileField.SERVER_ADDRESS in state.fieldErrors,
-                supportingText = state.fieldErrors[ProfileField.SERVER_ADDRESS]?.let { message ->
-                    { Text(message) }
-                },
-            )
-            OutlinedTextField(
-                value = state.username,
-                onValueChange = onUsernameChanged,
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("Username") },
-                singleLine = true,
-                isError = ProfileField.USERNAME in state.fieldErrors,
-                supportingText = state.fieldErrors[ProfileField.USERNAME]?.let { message ->
-                    { Text(message) }
-                },
-            )
-        }
+        if (expanded) content()
     }
 }
 
@@ -418,17 +197,20 @@ private fun PasswordSection(
     error: String?,
     importedProfileReady: Boolean,
     hasImportedPassword: Boolean,
+    canReuseSavedPassword: Boolean,
+    enabled: Boolean,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Password", style = MaterialTheme.typography.titleMedium)
         Text(
-            text = if (hasImportedPassword) {
-                "A password was included in the link. Leave this field empty to use it, or enter a replacement. It will be encrypted with Android Keystore when saved."
+            text = if (canReuseSavedPassword) {
+                "Leave empty to keep your saved password, or enter a new one."
+            } else if (hasImportedPassword) {
+                "Password included. Leave empty to use it, or enter a replacement."
             } else if (importedProfileReady) {
-                "Your imported profile is ready. Enter the VPN password to finish setup. " +
-                    "It will be encrypted with Android Keystore."
+                "Enter the VPN password provided with this profile."
             } else {
-                "Required to provision this profile. It will be encrypted with Android Keystore."
+                "Your password is stored securely on this device."
             },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -436,6 +218,7 @@ private fun PasswordSection(
         OutlinedTextField(
             value = password,
             onValueChange = onPasswordChanged,
+            enabled = enabled,
             modifier = Modifier.fillMaxWidth(),
             label = { Text("VPN Password") },
             singleLine = true,
@@ -558,12 +341,6 @@ private fun CertificateDetail(label: String, value: String) {
     }
 }
 
-private val MANUAL_PROFILE_FIELDS = setOf(
-    ProfileField.PROFILE_NAME,
-    ProfileField.SERVER_ADDRESS,
-    ProfileField.USERNAME,
-)
-
 @Composable
 internal fun ErrorCard(message: String, onDismiss: () -> Unit) {
     Card(
@@ -581,25 +358,5 @@ internal fun ErrorCard(message: String, onDismiss: () -> Unit) {
             )
             TextButton(onClick = onDismiss) { Text("Dismiss") }
         }
-    }
-}
-
-@Composable
-private fun MessageCard(message: String, isError: Boolean) {
-    val containerColor = if (isError) {
-        MaterialTheme.colorScheme.errorContainer
-    } else {
-        MaterialTheme.colorScheme.surfaceContainer
-    }
-    val contentColor = if (isError) {
-        MaterialTheme.colorScheme.onErrorContainer
-    } else {
-        MaterialTheme.colorScheme.onSurface
-    }
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = containerColor),
-    ) {
-        Text(message, modifier = Modifier.padding(16.dp), color = contentColor)
     }
 }

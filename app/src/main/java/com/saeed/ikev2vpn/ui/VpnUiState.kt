@@ -11,7 +11,9 @@ import com.saeed.ikev2vpn.vpn.VpnLogEntry
 enum class AppScreen {
     SETUP,
     MAIN,
+    PROFILES,
     DIAGNOSTICS,
+    ABOUT,
 }
 
 data class ImportedProfileUiInfo(
@@ -24,6 +26,9 @@ data class ImportedProfileUiInfo(
 data class VpnUiState(
     val profiles: List<com.saeed.ikev2vpn.data.StoredProfile> = emptyList(),
     val credentialPromptProfileName: String? = null,
+    val isEditingProfile: Boolean = false,
+    val editingProfileId: String? = null,
+    val canReuseSavedPassword: Boolean = false,
     val draftRevision: Int = 0,
     val selectedProfileId: String = "legacy",
     val initialized: Boolean = false,
@@ -46,6 +51,8 @@ data class VpnUiState(
     val importReplacementProfileId: String? = null,
     val importedProfileInfo: ImportedProfileUiInfo? = null,
     val sessionId: String? = null,
+    val connectedSinceMillis: Long? = null,
+    val traffic: com.saeed.ikev2vpn.vpn.VpnTraffic? = null,
     val error: String? = null,
     val technicalError: String? = null,
     val lastVpnError: String? = null,
@@ -55,3 +62,10 @@ data class VpnUiState(
     val fieldErrors: Map<ProfileField, String> = emptyMap(),
     val isBusy: Boolean = false,
 )
+
+/** Browsing remains available while the tunnel runs; mutations require an idle engine. */
+internal val VpnUiState.canManageProfiles: Boolean
+    get() = !isBusy && provisioningStatus != ProvisioningStatus.PENDING_CONSENT &&
+        credentialPromptProfileName == null && connectionState in setOf(
+            ConnectionState.NOT_CONFIGURED, ConnectionState.DISCONNECTED, ConnectionState.ERROR,
+        )

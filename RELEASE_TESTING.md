@@ -1,7 +1,7 @@
-# Android v1.3.1 Release Testing
+# Android v1.4.1 Release Testing
 
 Complete this checklist against the release candidate before creating
-`android-v1.3.1`. Record only observed results as `PASS`, `FAIL`, or `BLOCKED`;
+`android-v1.4.1`. Record only observed results as `PASS`, `FAIL`, or `BLOCKED`;
 this document is not evidence that any test has already passed.
 
 ## Device record matrix
@@ -39,11 +39,11 @@ review any exception.
       summary, and fingerprint before provisioning.
 - [ ] Import a public-trust `.ikev` profile; confirm the UI identifies Android
       system CA validation and the profile provisions without an embedded CA.
-- [ ] Enter the password, select **Save / Provision VPN**, approve Android VPN
+- [ ] Enter the password, select **Save profile**, approve Android VPN
       consent, and confirm provisioning succeeds.
 - [ ] Disconnect and reconnect without another password prompt; confirm the
       stored encrypted credential authenticates successfully.
-- [ ] Reprovision through **Edit Profile** with valid manual configuration and
+- [ ] Save through **Profiles → More → Edit configuration** with valid manual configuration and
       the correct public CA.
 - [ ] Deny VPN consent independently; confirm no provisioned state is retained
       and a later valid attempt succeeds.
@@ -175,5 +175,73 @@ Perform each case independently and restore the valid profile afterward:
 | APK checksum verified |  |  |
 | Signing key backup verified |  |  |
 
-Do not mark v1.3.1 ready while any required gate has failed or remains
+Do not mark v1.4.1 ready while any required gate has failed or remains
 unexplained. Attach only sanitized evidence and record device-specific quirks.
+
+## Connection and profiles UX
+
+- [ ] Check both tabs in light/dark mode, portrait/landscape, at 320dp width and
+      enlarged system font. Keep names readable, actions reachable, and the
+      editor save button above the keyboard.
+- [ ] Start with no profiles. Add through all four import methods and manual
+      setup, cancel, and confirm that no configuration is saved before Save.
+- [ ] Browse profiles during an active tunnel. Mutations must stay disabled;
+      returning to Connection must preserve the current session and its timer.
+- [ ] Rename selected and inactive profiles. Verify names persist after restart
+      and that selection, credentials, certificates, and app routing are retained.
+- [ ] Edit an inactive profile without activating it. Cancel to retain the
+      original; save to select it. Reuse a saved password or explicitly replace it.
+- [ ] Delete an inactive, selected, and final profile separately. Cancel first,
+      then confirm. Retain all other profiles and their saved credentials.
+- [ ] Connect, disconnect, reconnect, and reopen the app. Only a confirmed active
+      tunnel should display current-session timing and ID; no previous-session
+      values should remain after disconnect.
+- [ ] Verify per-app routing and certificate details expand when validation
+      needs them, private CA consent remains available, and diagnostics/appearance
+      stay reachable from the Connection menu.
+
+## VPN session traffic
+
+- [ ] Connect with IPv4 and IPv6, download a known file, then upload one. Verify
+      Download/In and Upload/Out increase in the correct directions and update
+      about once per second, including with the screen reopened.
+- [ ] With per-app routing enabled, transfer from a bypassed app and verify it
+      does not increase the TUN totals. Allow for background VPN app traffic.
+- [ ] Rekey and change Wi-Fi/mobile networks; retain totals within the same
+      native connection. Disconnect/reconnect and switch profiles; start fresh
+      totals without briefly showing the previous session's values.
+- [ ] Before connecting, after disconnecting, and when native stats are
+      unavailable, show dashes. Confirm the zero-traffic connected case displays
+      a real zero rather than a loading/unavailable value.
+- [ ] Check both light/dark mode and enlarged fonts. Verify readable KiB/MiB/GiB
+      values and that traffic updates do not interrupt scrolling or profile navigation.
+
+## About and in-app updater
+
+- [ ] About displays version 1.4.1 / code 7, the build type, source link, and update controls.
+- [ ] Verify no-release, offline, GitHub rate-limit, already-current, and newer-release states.
+- [ ] Download a newer official release with the same signing key; verify progress,
+      cancellation/retry, release notes, SHA-256, and no profile/credential changes.
+- [ ] Reject checksum/size mismatch, truncated APK, wrong package, non-increasing
+      versionCode, unexpected versionName, unsupported minSdk, and incompatible keys.
+- [ ] Deny unknown-source installation, return to the app, allow it, and retry.
+      Cancel Android's installer, then retry installation from the ready state.
+- [ ] Rotate during download and installation-permission setup. Background/return
+      and cancel/retry without duplicate downloads or installer launches.
+- [ ] Complete a same-key upgrade on API 30 and API 33+; verify profiles, per-app
+      routing and saved passwords survive. Reopen About and confirm the new version.
+- [ ] Installation may restart an active VPN. Verify reconnection afterward;
+      a debug build must clearly reject a production APK signed by another key.
+
+## v1.4.1 publication record — 2026-10-18
+
+This first official release uses a new production signing key. It cannot replace
+the locally signed debug APK in place. Reimport profiles after removing a debug
+installation; later official releases must retain this production signing key.
+
+The maintainer requested publication with this known exception: physical-device
+release validation has not been performed in this environment. The API 30–32 and
+API 33+ device rows remain unverified, including end-to-end installation and VPN
+reconnection after upgrade. Publication does not mark those checks as passed.
+Automated results and signed-artifact verification are recorded in the release
+notes; the unchecked device checklist remains required follow-up work.

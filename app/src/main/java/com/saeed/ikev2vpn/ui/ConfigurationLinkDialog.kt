@@ -2,6 +2,10 @@ package com.saeed.ikev2vpn.ui
 
 import android.content.ClipboardManager
 import android.content.Context
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -38,13 +42,14 @@ internal fun ConfigurationLinkDialog(onDismiss: () -> Unit, onImport: (String) -
         onDismissRequest = onDismiss,
         title = { Text("Import configuration link") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Paste the ikev:// link from your VPN panel.")
                 OutlinedTextField(
                     value = text,
                     onValueChange = ::update,
                     label = { Text("Configuration link") },
                     modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, autoCorrectEnabled = false),
                     minLines = 2,
                     maxLines = 4,
                 )
@@ -52,7 +57,9 @@ internal fun ConfigurationLinkDialog(onDismiss: () -> Unit, onImport: (String) -
                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     val item = clipboard.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)
                     // Do not resolve clipboard URIs or launch remote content.
-                    update(item?.text?.toString().orEmpty())
+                    val clipboardText = item?.text?.toString().orEmpty()
+                    update(clipboardText)
+                    if (clipboardText.isBlank()) error = "No configuration link was found in the clipboard."
                 }) { Text("Paste from clipboard") }
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }

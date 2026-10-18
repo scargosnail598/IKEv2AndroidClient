@@ -23,6 +23,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.Button
@@ -91,8 +93,9 @@ private fun QrScanner(onResult: (String) -> Unit, onCancel: () -> Unit) {
     LaunchedEffect(Unit) {
         if (!permitted) permission.launch(Manifest.permission.CAMERA)
     }
+    val scroll = rememberScrollState()
     Column(
-        modifier = Modifier.fillMaxSize().safeDrawingPadding().padding(24.dp),
+        modifier = Modifier.fillMaxSize().safeDrawingPadding().then(if (permitted) Modifier else Modifier.verticalScroll(scroll)).padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Text("Scan configuration QR", style = MaterialTheme.typography.headlineSmall)

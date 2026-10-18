@@ -5,7 +5,7 @@ and the strongSwan userland VPN engine.
 
 ## Status and version
 
-The current application version is **1.3.1** (`versionCode = 5`). The Gradle
+The current application version is **1.4.1** (`versionCode = 7`). The Gradle
 configuration in `app/build.gradle.kts` is the version source of truth.
 
 The repository is maintained as an independent Android project. Release-device
@@ -79,9 +79,9 @@ Base64 certificate text are read once and are not persisted.
 
 1. Export `username.ikev` from the server environment.
 2. Copy or share it to the Android device.
-3. Open the app and select **Import .ikev Profile**.
+3. Open **Profiles → Add profile → Choose a file**.
 4. Select the file and review the server, username, and CA fingerprint.
-5. Enter the VPN password and select **Save / Provision VPN**.
+5. Enter the VPN password and select **Save profile**.
 6. Approve Android VPN consent if requested, then connect.
 
 Import validates the frozen format and version, EAP-MSCHAPv2 authentication,
@@ -89,7 +89,7 @@ Full Tunnel mode, profile/server/username fields, embedded DER CA validity and
 CA Basic Constraints and SHA-256 fingerprint for private-CA profiles. Public
 trust profiles omit CA data and use strongSwan certificate validation.
 Import populates the setup screen but does not provision or replace the Android VPN profile until
-the user selects **Save / Provision VPN**.
+the user selects **Save profile**.
 
 The strongSwan engine accepts a separate server Remote ID. Imported profile
 metadata the UI does not configure, including SOCKS5 Proxy Mode, remains
@@ -102,12 +102,12 @@ password, then generate the link/QR. Android supports the server's offline
 `ikev://import/v1/<payload>` transport. No panel URL, login, or network request
 is needed to read it.
 
-On the Android setup screen choose:
+From **Profiles → Add profile**, choose:
 
-- **Import configuration link** to enter a link or explicitly paste from the clipboard.
-- **Scan QR** to use the camera; permission is requested only when scanning.
-- **QR image** to select a downloaded PNG/JPEG through Android's document picker.
-- **Import .ikev Profile** to continue using the existing portable file format.
+- **Paste a link** to enter a link or explicitly paste from the clipboard.
+- **Scan a QR code** to use the camera; permission is requested only when scanning.
+- **Choose a QR image** to select a downloaded PNG/JPEG through Android's document picker.
+- **Choose a file** to continue using the existing portable file format.
 
 Opening an `ikev://import/v1/…` link in an app that supports custom URI schemes
 also opens the review screen. Some browsers, messengers, and stock camera apps
@@ -145,6 +145,46 @@ have no built-in expiry; distribute password-bearing links/images privately.
 The interoperability contract and frozen test fixtures follow server commit
 `39885b00d5a2bfdba10c2c609ccb91a12badc4b5`:
 [configuration sharing](https://github.com/scargosnail598/myIkev2-connection/blob/39885b00d5a2bfdba10c2c609ccb91a12badc4b5/docs/config-sharing.md).
+
+## Connection and profile management
+
+The app has two main tabs:
+
+- **Connection** shows the selected profile, a single Connect/Disconnect button,
+  and the current session. A confirmed tunnel shows elapsed time, connection
+  time, account, and app routing. Expand **More details** for the server,
+  session ID, and certificate trust. Session timing starts when strongSwan
+  reports a connected tunnel; previous session IDs and timing are cleared when
+  disconnected. The **VPN traffic** card below the connection button shows
+  download (In) and upload (Out) totals for the current session, sampled once
+  per second from the native TUN packet path. Values include inner IPv4/IPv6
+  packet headers, including DNS packets handled by this interface, and exclude
+  IKE/ESP encapsulation overhead and traffic from apps bypassing the VPN.
+  A new native connection resets both counters; rekeying and TUN recreation
+  within that connection retain them. Disconnected/unavailable values show a
+  dash rather than an estimated zero. Totals are not billing figures or speeds.
+  No usage-access permission is needed. `testDebugUnitTest` also runs the host
+  C counter checks through `testNativeTraffic`.
+- **Profiles** lists saved configurations. Use a profile without opening its
+  editor. Its **More** menu offers **Rename**, **Edit configuration**, and
+  **Delete**. Deletion asks for confirmation and removes the saved password.
+  Deleting the selected profile leaves other profiles available for explicit
+  selection. Changes require a disconnected VPN; browsing remains available.
+
+**Add profile** opens one small list of import methods: paste a link, scan a QR,
+choose an `.ikev` file, or choose a QR image. Manual setup is available below.
+After import, review the name and account, supply a password if necessary, and
+choose **Save profile**. App routing and certificate settings are expandable.
+An included password survives changing the display name; changing the server
+or account discards that transient password. Existing profiles can reuse their
+saved password when edited; entering a value replaces it. Saving an inactive
+profile selects it, as indicated by **Save and select profile**.
+
+Appearance and detailed diagnostics are in the Connection screen's **More**
+menu. All screens scroll on smaller displays; the editor keeps its save action
+at the bottom above the keyboard. Android Studio previews for light/dark,
+profiles, import, and compact large-text layouts are in
+`app/src/debug/java/com/saeed/ikev2vpn/ui/UiPreviews.kt`.
 
 ## Manual configuration
 
@@ -219,6 +259,37 @@ GPL-2.0-or-later. The upstream strongSwan license and its OpenSSL linking
 exception are included in `third_party/strongswan/LICENSE`. OpenSSL carries its
 own license in the pinned source archive.
 
+## About and in-app updates
+
+Open **Connection → More → About** for the installed app version, build number,
+source code, and update controls. **More → Check for updates** opens the same
+screen and checks the latest public, stable GitHub Release. No check or download
+runs automatically at startup. A repository with no published releases displays
+that state rather than reporting a download failure.
+
+The updater expects the existing release workflow's exact asset pair:
+`ikev2-android-vX.Y.Z.apk` and `ikev2-android-vX.Y.Z.apk.sha256` on tag
+`android-vX.Y.Z`. Choose **Download update**, then **Install update**. Downloads
+show progress and can be cancelled. Android may first ask you to allow installs
+from this app, and always presents its own installation confirmation. Installing
+restarts the app and may interrupt an active VPN; profiles and encrypted
+credentials are retained by an in-place update.
+
+Only HTTPS GitHub/CDN downloads are accepted. The app bounds the download size,
+checks SHA-256, package name, newer versionCode, release version, minimum Android
+version, and signing-key compatibility before handing a private cached APK to
+Android through a narrowly scoped FileProvider. Failed/cancelled downloads are
+removed; stale cache directories are cleaned on later checks. If Android clears
+the cache or the app process is killed before installation, download again.
+
+**Debug and production signing keys are different.** This `1.4.0` test APK can
+replace earlier debug builds signed by the same local key. To test an in-place
+update downloaded from GitHub, publish a newer stable release with a higher
+`versionCode` and a key compatible with the installed build. A mismatched key is
+reported without uninstalling the current app or removing profiles. Release
+signing is never replaced with a debug key. No release is published by simply
+building or copying an APK to `dist`.
+
 ## Release build and signing
 
 Release APKs never fall back to the debug key. Create the production key once
@@ -244,15 +315,15 @@ read -rsp "Key password: " ANDROID_KEY_PASSWORD; export ANDROID_KEY_PASSWORD; pr
 An explicit release task fails when any signing value is missing. Debug builds,
 tests, and lint do not read or require signing credentials.
 
-After completing [RELEASE_TESTING.md](RELEASE_TESTING.md), build v1.3.1 with:
+After completing [RELEASE_TESTING.md](RELEASE_TESTING.md), build v1.4.1 with:
 
 ```bash
 ./gradlew --no-daemon --no-configuration-cache clean assembleRelease
 mkdir -p dist
-cp app/build/outputs/apk/release/app-release.apk dist/ikev2-android-v1.3.1.apk
-apksigner verify --verbose --print-certs dist/ikev2-android-v1.3.1.apk
-(cd dist && sha256sum ikev2-android-v1.3.1.apk > ikev2-android-v1.3.1.apk.sha256)
-(cd dist && sha256sum -c ikev2-android-v1.3.1.apk.sha256)
+cp app/build/outputs/apk/release/app-release.apk dist/ikev2-android-v1.4.1.apk
+apksigner verify --verbose --print-certs dist/ikev2-android-v1.4.1.apk
+(cd dist && sha256sum ikev2-android-v1.4.1.apk > ikev2-android-v1.4.1.apk.sha256)
+(cd dist && sha256sum -c ikev2-android-v1.4.1.apk.sha256)
 unset ANDROID_KEYSTORE_PATH ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD
 ```
 
@@ -264,7 +335,7 @@ for every update.
 
 `dist/` is ignored. After the signed release candidate passes the manual device
 checklist, run **Tag Android Release** from the Actions tab on `main`, enter
-`1.3.1`, and confirm device validation. The workflow checks that the requested
+`1.4.1`, and confirm device validation. The workflow checks that the requested
 version matches Gradle, runs unsigned CI validation, creates the annotated tag,
 and starts **Android Release** to build and publish the signed APK and checksum.
 The Android Release workflow can also be started manually for an existing tag.
@@ -302,15 +373,16 @@ These are not part of the current v1.3 scope.
 
 ## Multiple profiles
 
-Use **Add Profile** to create or import another configuration. The profile menu
-selects a saved configuration after disconnecting and returns to the connection
-screen. Each configuration retains its own CA certificate and encrypted password.
-Editing is available separately through **Edit Profile**. Profiles from older builds
-whose passwords were discarded ask for a password once in a separate dialog.
+Open **Profiles → Add profile** to create or import another configuration.
+Choose **Use this profile** after disconnecting to select a saved configuration
+and return to the connection screen. Each configuration retains its own CA
+certificate and encrypted password. Its **More** menu offers rename, editing,
+and deletion. Profiles from older builds whose passwords were discarded ask
+for a password once in a separate dialog.
 
 ## Per-app VPN
 
-Disconnect, open **Edit Profile**, and use **Per-app VPN**:
+Disconnect, open a profile’s **More → Edit configuration**, and expand **Apps using VPN**:
 
 - **All apps** keeps the normal full-tunnel behavior.
 - **Only selected apps use VPN** sends the selected apps through the tunnel;
@@ -320,7 +392,7 @@ Disconnect, open **Edit Profile**, and use **Per-app VPN**:
 Use **Select apps** to search by app label or package name. **Show system apps**
 includes system packages with internet access. Selected system apps stay visible
 when the toggle is off. Unavailable saved apps remain listed so they can be
-removed. Enter the password and choose **Save / Provision VPN**, then reconnect.
+removed. Keep the saved password or enter a replacement, choose **Save profile**, then reconnect.
 Canceling profile edits discards routing changes along with other unsaved fields.
 Routing preferences survive relaunch and are retained separately for each saved
 profile. New profiles and profiles from older builds default to **All apps**.

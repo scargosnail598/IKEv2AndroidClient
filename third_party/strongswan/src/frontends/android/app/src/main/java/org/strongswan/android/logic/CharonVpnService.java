@@ -822,6 +822,9 @@ public class CharonVpnService extends VpnService implements Runnable, VpnStateSe
 	 */
 	public native void initiate(String config);
 
+	/** Thread-safe TUN totals for the current native connection: download, upload. */
+	public static native long[] getTrafficSnapshot();
+
 	/**
 	 * Adapter for VpnService.Builder which is used to access it safely via JNI.
 	 * There is a corresponding C object to access it from native code.
