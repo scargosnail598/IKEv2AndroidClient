@@ -61,6 +61,28 @@ review any exception.
 - [ ] Relaunch with a provisioned but disconnected profile; confirm
       connect/disconnect still works and no false state appears.
 
+## Per-app VPN routing
+
+- [ ] Upgrade from an older build and verify the existing profile defaults to
+      **All apps**, with the same network behavior as before.
+- [ ] Choose **Only selected apps use VPN**, select one browser, save, and
+      reconnect. Verify its public IP/DNS behavior uses the VPN while another
+      browser uses the regular network. Repeat after Wi-Fi/mobile changes.
+- [ ] Choose **Selected apps bypass VPN**, select one browser, save, and
+      reconnect. Verify the selected browser bypasses and another uses the VPN.
+- [ ] Save **All apps** after testing both modes; confirm prior restrictions
+      are cleared from the reused engine profile.
+- [ ] Verify empty include selection prevents saving; uninstall every selected
+      app and reconnect, confirming no all-app tunnel is established.
+- [ ] Uninstall just one of multiple included apps; the remaining selected apps
+      should still use the VPN. Remove the unavailable app in the picker.
+- [ ] Search by name/package; verify system-app filtering, selection retention,
+      and selection of an internet-capable app without a launcher activity.
+- [ ] Cancel edits, rotate, relaunch, and switch between profiles with different
+      app selections. Confirm each saved configuration retains its own mode and list.
+- [ ] Check bypass behavior with Android always-on VPN and **Block connections
+      without VPN**, and record shared-UID or device-specific restrictions.
+
 ## `.ikev` import rejection checks
 
 Perform each case independently and restore the valid profile afterward:
@@ -77,6 +99,37 @@ Perform each case independently and restore the valid profile afterward:
 - [ ] Unsupported authentication or tunnel mode is rejected.
 - [ ] A Remote ID that differs from the server is rejected.
 - [ ] Rejection does not overwrite the previously committed profile or CA.
+
+## Configuration link and QR import
+
+- [ ] Export public-trust and private-CA links from **Users → Link & QR**, each
+      with and without a password. Paste each into Android and compare the
+      server, Remote ID, username, CA fingerprint, and proxy summary.
+- [ ] Scan the panel's QR, including a dense 4096-bit CA export, in portrait and
+      landscape. Verify one result, preview release, and back/cancel behavior.
+- [ ] Import a downloaded QR PNG and a rotated QR image. Reject a non-QR image,
+      malformed image, image over 16 MiB, and unrelated QR text without changing
+      the committed profile. Check image import after camera permission denial.
+- [ ] Deny/revoke camera permission, try again from app settings, and verify
+      text/file/image import works on a device without a camera.
+- [ ] Open an `ikev://import/v1/…` link while the app is closed and while it is
+      already open. Rotate/recreate the Activity and verify no duplicate import.
+- [ ] Verify importing creates a new profile by default, retains earlier
+      profiles, and resets per-app routing to All apps. Explicitly select a
+      matching saved profile for replacement; cancel and confirm separately.
+- [ ] Confirm a password-bearing share requires no retyping, permits an
+      explicitly typed replacement, and stores credentials only after saving.
+      A password-free share must prompt for a password.
+- [ ] Background, rotate, cancel, change identity, and start another import;
+      verify the previous included password is discarded. Repeat backgrounding
+      while image/link decoding is still in progress.
+- [ ] Confirm private CA trust and the complete fingerprint before saving.
+      Import must never auto-connect, bypass VPN consent, or change an active
+      tunnel. Reject imports during connection/provisioning/consent operations.
+- [ ] Reject altered URI structure, future versions, invalid Base64/zlib,
+      truncated/trailing streams, oversized output, duplicate/deep JSON,
+      invalid password fields, and a CA fingerprint mismatch. Keep the prior
+      committed profile intact and exclude full links/passwords from diagnostics.
 
 ## Authentication, identity, and failure checks
 

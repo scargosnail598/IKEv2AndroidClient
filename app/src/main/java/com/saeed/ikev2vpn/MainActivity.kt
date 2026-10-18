@@ -1,5 +1,6 @@
 package com.saeed.ikev2vpn
 
+import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
 import androidx.activity.SystemBarStyle
@@ -33,6 +34,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (savedInstanceState == null) handleConfigurationIntent(intent)
         enableEdgeToEdge()
         val application = application as Ikev2VpnApplication
         setContent {
@@ -69,4 +71,28 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleConfigurationIntent(intent)
+    }
+
+    private fun handleConfigurationIntent(incoming: Intent) {
+        if (incoming.action != Intent.ACTION_VIEW) return
+        val text = incoming.dataString ?: return
+        // Remove credentials from the Activity's retained intent before any recreation.
+        incoming.data = null
+        setIntent(Intent(this, MainActivity::class.java))
+        viewModel.importConfigurationLink(text)
+    }
+
+    override fun onStart() {
+        super.onStart()
+        viewModel.setImportForeground(true)
+    }
+
+    override fun onStop() {
+        viewModel.setImportForeground(false)
+        super.onStop()
+    }
+
 }

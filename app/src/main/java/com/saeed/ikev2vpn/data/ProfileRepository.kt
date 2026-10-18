@@ -102,6 +102,7 @@ class DataStoreProfileRepository(
             preferences[PROFILE_NAME] = config.profileName
             preferences[SERVER_ADDRESS] = config.serverAddress
             preferences[USERNAME] = config.username
+            preferences[APP_ROUTING] = config.appRouting.encode()
             setCertificateFingerprint(preferences, CERTIFICATE_FINGERPRINT, certificate)
             preferences[STATUS] = status.name
             removePendingValues(preferences)
@@ -122,6 +123,7 @@ class DataStoreProfileRepository(
             preferences[PENDING_PROFILE_NAME] = config.profileName
             preferences[PENDING_SERVER_ADDRESS] = config.serverAddress
             preferences[PENDING_USERNAME] = config.username
+            preferences[PENDING_APP_ROUTING] = config.appRouting.encode()
             setCertificateFingerprint(preferences, PENDING_CERTIFICATE_FINGERPRINT, certificate)
         }
         removeUnreferencedCertificatesForFingerprints(activeFingerprints)
@@ -137,6 +139,7 @@ class DataStoreProfileRepository(
             preferences[PROFILE_NAME] = pending.config.profileName
             preferences[SERVER_ADDRESS] = pending.config.serverAddress
             preferences[USERNAME] = pending.config.username
+            preferences[APP_ROUTING] = pending.config.appRouting.encode()
             setCertificateFingerprint(preferences, CERTIFICATE_FINGERPRINT, pending.certificateFingerprint)
             preferences[STATUS] = ProvisioningStatus.PROVISIONED.name
             activeFingerprint = pending.certificateFingerprint
@@ -161,6 +164,7 @@ class DataStoreProfileRepository(
                 preferences[PROFILE_NAME] = pending.config.profileName
                 preferences[SERVER_ADDRESS] = pending.config.serverAddress
                 preferences[USERNAME] = pending.config.username
+                preferences[APP_ROUTING] = pending.config.appRouting.encode()
                 setCertificateFingerprint(preferences, CERTIFICATE_FINGERPRINT, pending.certificateFingerprint)
                 preferences[STATUS] = ProvisioningStatus.DRAFT.name
                 pending.certificateFingerprint?.let(activeFingerprints::add)
@@ -229,7 +233,7 @@ class DataStoreProfileRepository(
         return (0 until entries.length()).map { index ->
             val entry = entries.getJSONObject(index)
             mutablePreferencesOf().apply {
-                listOf(PROFILE_ID, PROFILE_NAME, SERVER_ADDRESS, USERNAME, CERTIFICATE_FINGERPRINT).forEach { key ->
+                listOf(PROFILE_ID, PROFILE_NAME, SERVER_ADDRESS, USERNAME, CERTIFICATE_FINGERPRINT, APP_ROUTING).forEach { key ->
                     if (entry.has(key.name)) this[key] = entry.getString(key.name)
                 }
                 this[STATUS] = ProvisioningStatus.NEEDS_REPROVISION.name
@@ -247,7 +251,7 @@ class DataStoreProfileRepository(
         val entries = JSONArray()
         archived.forEach { profile ->
             entries.put(JSONObject().apply {
-                listOf(PROFILE_ID, PROFILE_NAME, SERVER_ADDRESS, USERNAME, CERTIFICATE_FINGERPRINT).forEach { key ->
+                listOf(PROFILE_ID, PROFILE_NAME, SERVER_ADDRESS, USERNAME, CERTIFICATE_FINGERPRINT, APP_ROUTING).forEach { key ->
                     profile[key]?.let { put(key.name, it) }
                 }
             })
@@ -277,7 +281,11 @@ class DataStoreProfileRepository(
     }
 
     private fun loadProfile(preferences: Preferences, pending: Boolean): ProfileLoadResult {
-        val values = if (pending) pendingValues(preferences) else committedValues(preferences)
+        val values = try {
+            if (pending) pendingValues(preferences) else committedValues(preferences)
+        } catch (_: Exception) {
+            return ProfileLoadResult(error = "The stored per-app VPN settings are invalid. Edit and save the profile again.")
+        }
         if (values == null) {
             val anyValuePresent = if (pending) {
                 listOf(
@@ -332,6 +340,7 @@ class DataStoreProfileRepository(
         preferences[USERNAME],
         preferences[CERTIFICATE_FINGERPRINT],
         preferences[PROFILE_ID] ?: "legacy",
+        preferences[APP_ROUTING],
     )
 
     private fun pendingValues(preferences: Preferences): ProfileValues? = profileValues(
@@ -340,6 +349,7 @@ class DataStoreProfileRepository(
         preferences[PENDING_USERNAME],
         preferences[PENDING_CERTIFICATE_FINGERPRINT],
         preferences[PENDING_PROFILE_ID] ?: "legacy",
+        preferences[PENDING_APP_ROUTING],
     )
 
     private fun profileValues(
@@ -348,12 +358,13 @@ class DataStoreProfileRepository(
         username: String?,
         certificateFingerprint: String?,
         id: String,
+        appRouting: String?,
     ): ProfileValues? {
         if (profileName == null || serverAddress == null || username == null) {
             return null
         }
         return ProfileValues(
-            config = VpnProfileConfig(profileName, serverAddress, username, id),
+            config = VpnProfileConfig(profileName, serverAddress, username, id, AppRoutingConfig.decode(appRouting)),
             certificateFingerprint = certificateFingerprint,
         )
     }
@@ -363,6 +374,7 @@ class DataStoreProfileRepository(
         preferences.remove(PENDING_PROFILE_NAME)
         preferences.remove(PENDING_SERVER_ADDRESS)
         preferences.remove(PENDING_USERNAME)
+        preferences.remove(PENDING_APP_ROUTING)
         preferences.remove(PENDING_CERTIFICATE_FINGERPRINT)
     }
 
@@ -466,6 +478,8 @@ class DataStoreProfileRepository(
         val PROFILE_NAME = stringPreferencesKey("profile_name")
         val SERVER_ADDRESS = stringPreferencesKey("server_address")
         val USERNAME = stringPreferencesKey("username")
+        val APP_ROUTING = stringPreferencesKey("app_routing")
+        val PENDING_APP_ROUTING = stringPreferencesKey("pending_app_routing")
         val CERTIFICATE_FINGERPRINT = stringPreferencesKey("certificate_fingerprint")
         val STATUS = stringPreferencesKey("provisioning_status")
         val PENDING_PROFILE_NAME = stringPreferencesKey("pending_profile_name")

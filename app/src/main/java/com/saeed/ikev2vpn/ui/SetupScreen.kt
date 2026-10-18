@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -49,13 +50,67 @@ fun SetupScreen(
     onProfileNameChanged: (String) -> Unit,
     onServerChanged: (String) -> Unit,
     onUsernameChanged: (String) -> Unit,
+    onAppRoutingModeChanged: (com.saeed.ikev2vpn.data.AppRoutingMode) -> Unit,
+    onToggleApplication: (String) -> Unit,
     onImportIkevProfile: () -> Unit,
+    onImportLink: () -> Unit,
+    onScanQr: () -> Unit,
+    onImportQrImage: () -> Unit,
+    onReplaceImportedProfile: (String?) -> Unit,
     onImportCertificate: () -> Unit,
     onProvision: (String) -> Unit,
     onBack: () -> Unit,
     onDismissError: () -> Unit,
 ) {
     var password by remember { mutableStateOf("") }
+    var confirmSave by remember { mutableStateOf(false) }
+    var chooseReplacement by remember { mutableStateOf(false) }
+    fun save() {
+        val value = password
+        password = ""
+        confirmSave = false
+        onProvision(value)
+    }
+    if (confirmSave) {
+        AlertDialog(
+            onDismissRequest = { confirmSave = false },
+            title = { Text(when {
+                state.importedProfileInfo == null -> "Save VPN profile?"
+                state.importReplacementProfileId == null -> "Save new profile?"
+                else -> "Replace saved profile?"
+            }) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Server: ${state.serverAddress}\nIdentity: ${state.importedProfileInfo?.remoteId ?: state.serverAddress}\nUsername: ${state.username}")
+                    if (state.certificateInfo != null) {
+                        Text("Trust this private CA only if you trust the profile's sender. Compare its SHA-256 fingerprint through a trusted channel:")
+                        Text(state.certificateInfo.sha256Fingerprint, style = MaterialTheme.typography.bodySmall)
+                    } else {
+                        Text("The server certificate will be checked against trusted public certificate authorities.")
+                    }
+                    if (state.importReplacementProfileId != null) Text("The selected saved profile and its credentials will be replaced.")
+                }
+            },
+            confirmButton = { TextButton(onClick = ::save) { Text("Confirm and save") } },
+            dismissButton = { TextButton(onClick = { confirmSave = false }) { Text("Cancel") } },
+        )
+    }
+    if (chooseReplacement) {
+        AlertDialog(
+            onDismissRequest = { chooseReplacement = false },
+            title = { Text("Replace a matching profile") },
+            text = {
+                Column {
+                    state.profiles.filter { it.config.serverAddress == state.serverAddress && it.config.username == state.username }.forEach { profile ->
+                        TextButton(onClick = { onReplaceImportedProfile(profile.config.id); chooseReplacement = false }) {
+                            Text(profile.config.profileName)
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { chooseReplacement = false }) { Text("Cancel") } },
+        )
+    }
     val hasDraftProfile = state.profileName.isNotBlank() ||
         state.serverAddress.isNotBlank() ||
         state.username.isNotBlank() ||
@@ -67,6 +122,8 @@ fun SetupScreen(
     }
     LaunchedEffect(state.draftRevision, state.selectedProfileId, state.importedProfileInfo?.importRevision) {
         password = ""
+        confirmSave = false
+        chooseReplacement = false
         manualSetupExpanded = state.importedProfileInfo == null && hasDraftProfile
         if (state.importedProfileInfo != null) {
             manualSetupExpanded = false
@@ -80,7 +137,11 @@ fun SetupScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_STOP) password = ""
+            if (event == Lifecycle.Event.ON_STOP) {
+                password = ""
+                confirmSave = false
+                chooseReplacement = false
+            }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
@@ -140,6 +201,24 @@ fun SetupScreen(
             Text("Import .ikev Profile")
         }
 
+        OutlinedButton(onClick = onImportLink, modifier = Modifier.fillMaxWidth(), enabled = !state.isBusy) {
+            Text("Import configuration link")
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedButton(onClick = onScanQr, modifier = Modifier.weight(1f), enabled = !state.isBusy) { Text("Scan QR") }
+            OutlinedButton(onClick = onImportQrImage, modifier = Modifier.weight(1f), enabled = !state.isBusy) { Text("QR image") }
+        }
+
+        if (state.importedProfileInfo != null) {
+            val replacing = state.profiles.firstOrNull { it.config.id == state.importReplacementProfileId }
+            Text(if (replacing == null) "This import will create a new profile." else "Replacing: ${replacing.config.profileName}")
+            if (replacing != null) {
+                TextButton(onClick = { onReplaceImportedProfile(null) }) { Text("Save as new profile instead") }
+            } else if (state.profiles.any { it.config.serverAddress == state.serverAddress && it.config.username == state.username }) {
+                TextButton(onClick = { chooseReplacement = true }) { Text("Replace a matching saved profile…") }
+            }
+        }
+
         if (!manualSetupExpanded && (state.importedProfileInfo != null || hasDraftProfile)) {
             ProfileSummaryCard(
                 state = state,
@@ -176,11 +255,14 @@ fun SetupScreen(
             state.configured ||
             hasDraftProfile
         if (showProvisioningControls) {
+            AppRoutingSection(state, onAppRoutingModeChanged, onToggleApplication)
+
             PasswordSection(
                 password = password,
                 onPasswordChanged = { password = it },
                 error = state.fieldErrors[ProfileField.PASSWORD],
                 importedProfileReady = state.importedProfileInfo != null,
+                hasImportedPassword = state.hasImportedPassword,
             )
 
             CertificateSection(
@@ -190,9 +272,7 @@ fun SetupScreen(
 
             Button(
                 onClick = {
-                    val passwordForProvisioning = password
-                    password = ""
-                    onProvision(passwordForProvisioning)
+                    if (state.importedProfileInfo != null || state.certificateInfo != null) confirmSave = true else save()
                 },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -237,6 +317,12 @@ private fun ProfileSummaryCard(state: VpnUiState, imported: Boolean) {
             ProfileSummaryRow("Profile name", state.profileName)
             ProfileSummaryRow("Server", state.serverAddress)
             ProfileSummaryRow("Username", state.username)
+            state.importedProfileInfo?.let {
+                ProfileSummaryRow("Remote ID", it.remoteId)
+                ProfileSummaryRow("Server profile", it.serverProfile)
+                Text(it.proxySummary, style = MaterialTheme.typography.bodySmall)
+            }
+            ProfileSummaryRow("Trust", if (state.usesPublicCertificateTrust) "Public certificate authorities" else "Private CA")
             ProfileSummaryRow("Certificate", state.certificateInfo?.displayName.orEmpty())
         }
     }
@@ -331,11 +417,14 @@ private fun PasswordSection(
     onPasswordChanged: (String) -> Unit,
     error: String?,
     importedProfileReady: Boolean,
+    hasImportedPassword: Boolean,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Password", style = MaterialTheme.typography.titleMedium)
         Text(
-            text = if (importedProfileReady) {
+            text = if (hasImportedPassword) {
+                "A password was included in the link. Leave this field empty to use it, or enter a replacement. It will be encrypted with Android Keystore when saved."
+            } else if (importedProfileReady) {
                 "Your imported profile is ready. Enter the VPN password to finish setup. " +
                     "It will be encrypted with Android Keystore."
             } else {

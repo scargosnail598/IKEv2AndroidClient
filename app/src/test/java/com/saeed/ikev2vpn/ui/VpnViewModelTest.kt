@@ -5,6 +5,9 @@ import com.saeed.ikev2vpn.certificate.CertificateImporter
 import com.saeed.ikev2vpn.certificate.CertificateLoader
 import com.saeed.ikev2vpn.certificate.CertificateLoaderTest
 import com.saeed.ikev2vpn.certificate.LoadedCertificate
+import com.saeed.ikev2vpn.data.AppRoutingConfig
+import com.saeed.ikev2vpn.data.AppRoutingMode
+import com.saeed.ikev2vpn.validation.ProfileField
 import com.saeed.ikev2vpn.data.ProfileRepository
 import com.saeed.ikev2vpn.data.ProvisioningStatus
 import com.saeed.ikev2vpn.data.RepositorySnapshot
@@ -12,6 +15,12 @@ import com.saeed.ikev2vpn.data.StoredDiagnostics
 import com.saeed.ikev2vpn.data.StoredProfile
 import com.saeed.ikev2vpn.data.VpnProfileConfig
 import com.saeed.ikev2vpn.profile.IkevProfileImporter
+import com.saeed.ikev2vpn.profile.IkevProfileParser
+import com.saeed.ikev2vpn.profile.IkevShareDecoder
+import com.saeed.ikev2vpn.profile.IkevShareDecoderTest
+import com.saeed.ikev2vpn.profile.ImportedIkevShare
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.flow.MutableSharedFlow
 import com.saeed.ikev2vpn.profile.ImportedIkevProfile
 import com.saeed.ikev2vpn.profile.ImportedProxyMetadata
 import com.saeed.ikev2vpn.vpn.ConnectionState
@@ -131,7 +140,7 @@ class VpnViewModelTest {
         assertTrue(state.importedProfileInfo?.proxySummary.orEmpty().contains("10.254.254.1:1080"))
         assertEquals(0, controller.provisionCalls)
         assertEquals(0, repository.saveCalls)
-        assertFalse(state.toString().contains("password", ignoreCase = true))
+        assertFalse(state.hasImportedPassword)
     }
 
     @Test
@@ -278,17 +287,204 @@ class VpnViewModelTest {
         assertEquals(0, controller.deleteCalls)
     }
 
+    @Test
+    fun `per-app selection saves with the profile and cancel restores saved routing`() = runTest {
+        val repository = FakeProfileRepository(provisionedSnapshot(testCertificate()))
+        val viewModel = createViewModel(repository, FakeVpnController())
+        viewModel.showSetup()
+        viewModel.updateAppRoutingMode(AppRoutingMode.ONLY_SELECTED)
+        viewModel.toggleApplication("com.example.browser")
+        viewModel.provisionProfile("secret")
+        val expected = AppRoutingConfig(AppRoutingMode.ONLY_SELECTED, setOf("com.example.browser"))
+        assertEquals(expected, repository.current.profile!!.config.appRouting)
+        viewModel.showSetup()
+        viewModel.updateAppRoutingMode(AppRoutingMode.ALL)
+        viewModel.toggleApplication("com.example.bank")
+        viewModel.showMain()
+        assertEquals(expected, viewModel.uiState.value.appRouting)
+    }
+
+    @Test
+    fun `empty app allowlist is rejected before persistence or engine provisioning`() = runTest {
+        val repository = FakeProfileRepository(provisionedSnapshot(testCertificate()))
+        val controller = FakeVpnController()
+        val viewModel = createViewModel(repository, controller)
+        viewModel.showSetup()
+        viewModel.updateAppRoutingMode(AppRoutingMode.ONLY_SELECTED)
+        viewModel.provisionProfile("secret")
+        assertTrue(ProfileField.APPLICATIONS in viewModel.uiState.value.fieldErrors)
+        assertEquals(0, controller.provisionCalls)
+        assertEquals(null, repository.current.pendingProfile)
+    }
+
+    @Test
+    fun `switching profiles restores routing and new profiles default to all apps`() = runTest {
+        val first = provisionedSnapshot(testCertificate()).profile!!
+        val routing = AppRoutingConfig(AppRoutingMode.EXCLUDE_SELECTED, setOf("com.example.bank"))
+        val second = first.copy(config = first.config.copy(id = "second", appRouting = routing))
+        val repository = FakeProfileRepository(RepositorySnapshot(profile = first, profiles = listOf(first, second)))
+        val controller = FakeVpnController()
+        val viewModel = createViewModel(repository, controller)
+        viewModel.selectProfile("second")
+        assertEquals(routing, controller.restoredProfile!!.appRouting)
+        assertEquals(routing, viewModel.uiState.value.appRouting)
+        viewModel.addProfile()
+        assertEquals(AppRoutingConfig(), viewModel.uiState.value.appRouting)
+    }
+
+    @Test
+    fun `share with password creates a new draft and provisions only after confirmation`() = runTest {
+        val repository = FakeProfileRepository(provisionedSnapshot(testCertificate()))
+        val controller = FakeVpnController()
+        val viewModel = createViewModel(repository, controller)
+        viewModel.importConfigurationLink(IkevShareDecoderTest.fixture("public-password"))
+        assertEquals(AppScreen.SETUP, viewModel.uiState.value.screen)
+        assertTrue(viewModel.uiState.value.hasImportedPassword)
+        assertEquals(0, controller.provisionCalls)
+        assertEquals(0, repository.saveCalls)
+        assertFalse(viewModel.uiState.value.toString().contains(IkevShareDecoderTest.PASSWORD))
+        viewModel.provisionProfile("")
+        assertEquals(IkevShareDecoderTest.PASSWORD, controller.provisionedPassword)
+        assertTrue(repository.current.profile!!.config.id != "legacy")
+        assertTrue(repository.current.profiles.any { it.config.id == "legacy" })
+        assertFalse(viewModel.uiState.value.hasImportedPassword)
+    }
+
+    @Test
+    fun `password free share requires credentials and an explicit value overrides included credentials`() = runTest {
+        val repository = FakeProfileRepository(RepositorySnapshot())
+        val controller = FakeVpnController()
+        val viewModel = createViewModel(repository, controller)
+        viewModel.importConfigurationLink(IkevShareDecoderTest.fixture("public"))
+        viewModel.provisionProfile("")
+        assertTrue(ProfileField.PASSWORD in viewModel.uiState.value.fieldErrors)
+        assertEquals(0, controller.provisionCalls)
+        viewModel.importConfigurationLink(IkevShareDecoderTest.fixture("public-password"))
+        viewModel.provisionProfile("  explicit replacement  ")
+        assertEquals("  explicit replacement  ", controller.provisionedPassword)
+    }
+
+    @Test
+    fun `backgrounding and identity edits discard included password`() = runTest {
+        for (discard in listOf<(VpnViewModel) -> Unit>(
+            { it.clearImportedPassword() }, { it.updateUsername("other") }, { it.addProfile() }, { it.showMain() },
+        )) {
+            val viewModel = createViewModel(FakeProfileRepository(RepositorySnapshot()), FakeVpnController())
+            viewModel.importConfigurationLink(IkevShareDecoderTest.fixture("public-password"))
+            assertTrue(viewModel.uiState.value.hasImportedPassword)
+            discard(viewModel)
+            assertFalse(viewModel.uiState.value.hasImportedPassword)
+            viewModel.provisionProfile("")
+            assertTrue(ProfileField.PASSWORD in viewModel.uiState.value.fieldErrors)
+        }
+    }
+
+    @Test
+    fun `links decoded while stopped never retain their password on resume`() = runTest {
+        val viewModel = createViewModel(FakeProfileRepository(RepositorySnapshot()), FakeVpnController())
+        viewModel.setImportForeground(false)
+        viewModel.importConfigurationLink(IkevShareDecoderTest.fixture("public-password"))
+        assertFalse(viewModel.uiState.value.hasImportedPassword)
+        viewModel.setImportForeground(true)
+        assertFalse(viewModel.uiState.value.hasImportedPassword)
+        viewModel.provisionProfile("")
+        assertTrue(ProfileField.PASSWORD in viewModel.uiState.value.fieldErrors)
+    }
+
+    @Test
+    fun `decoder finishing after background clear cannot restore the included password`() = runTest {
+        val pending = CompletableDeferred<ImportedIkevShare>()
+        val viewModel = createViewModel(FakeProfileRepository(RepositorySnapshot()), FakeVpnController(), shareLoader = { pending.await() })
+        viewModel.importConfigurationLink("pending")
+        assertTrue(viewModel.uiState.value.isBusy)
+        viewModel.clearImportedPassword()
+        pending.complete(shareDecoder().decode(IkevShareDecoderTest.fixture("public-password")))
+        assertFalse(viewModel.uiState.value.hasImportedPassword)
+        assertFalse(viewModel.uiState.value.isBusy)
+        assertEquals("alice", viewModel.uiState.value.username)
+    }
+
+    @Test
+    fun `external link waits for repository initialization before showing its draft`() = runTest {
+        val repository = FakeProfileRepository(provisionedSnapshot(testCertificate()))
+        val snapshots = MutableSharedFlow<RepositorySnapshot>()
+        val delayed = object : ProfileRepository by repository {
+            override val snapshots: Flow<RepositorySnapshot> = snapshots
+        }
+        val viewModel = createViewModel(delayed, FakeVpnController())
+        viewModel.importConfigurationLink(IkevShareDecoderTest.fixture("public"))
+        assertFalse(viewModel.uiState.value.initialized)
+        snapshots.emit(repository.current)
+        assertEquals("alice", viewModel.uiState.value.username)
+        assertEquals(AppScreen.SETUP, viewModel.uiState.value.screen)
+    }
+
+    @Test
+    fun `share cannot change connected profile or interrupt ongoing provisioning`() = runTest {
+        val repository = FakeProfileRepository(provisionedSnapshot(testCertificate()))
+        val controller = FakeVpnController(VpnState(connectionState = ConnectionState.CONNECTED))
+        var calls = 0
+        val viewModel = createViewModel(repository, controller, shareLoader = { calls++; error("Must not decode") })
+        viewModel.importConfigurationLink(IkevShareDecoderTest.fixture("public-password"))
+        assertEquals(0, calls)
+        assertEquals("Saved VPN", viewModel.uiState.value.profileName)
+        assertTrue(viewModel.uiState.value.error.orEmpty().contains("Disconnect"))
+
+        val pending = CompletableDeferred<ImportedIkevShare>()
+        val busyViewModel = createViewModel(FakeProfileRepository(RepositorySnapshot()), FakeVpnController(), shareLoader = { pending.await() })
+        busyViewModel.importConfigurationLink("first")
+        busyViewModel.importConfigurationLink("second")
+        assertTrue(busyViewModel.uiState.value.isBusy)
+        pending.complete(shareDecoder().decode(IkevShareDecoderTest.fixture("public")))
+        assertFalse(busyViewModel.uiState.value.isBusy)
+    }
+
+    @Test
+    fun `replacement requires an explicitly selected matching saved identity`() = runTest {
+        val original = StoredProfile(VpnProfileConfig("Alice", "vpn.example.com", "alice", "alice-id"), null, ProvisioningStatus.PROVISIONED)
+        val repository = FakeProfileRepository(RepositorySnapshot(profile = original, profiles = listOf(original)))
+        val viewModel = createViewModel(repository, FakeVpnController())
+        viewModel.importConfigurationLink(IkevShareDecoderTest.fixture("public-password"))
+        assertEquals(null, viewModel.uiState.value.importReplacementProfileId)
+        viewModel.replaceImportedProfile("unknown")
+        assertEquals(null, viewModel.uiState.value.importReplacementProfileId)
+        viewModel.replaceImportedProfile("alice-id")
+        assertEquals("alice-id", viewModel.uiState.value.importReplacementProfileId)
+        viewModel.provisionProfile("")
+        assertEquals("alice-id", repository.current.profile!!.config.id)
+        assertEquals(1, repository.current.profiles.size)
+    }
+
+    @Test
+    fun `bad share preserves current configuration and exposes no URI or secret`() = runTest {
+        val repository = FakeProfileRepository(provisionedSnapshot(testCertificate()))
+        val viewModel = createViewModel(repository, FakeVpnController())
+        viewModel.importConfigurationLink("ikev://import/v1/not-valid?password=super-secret")
+        assertEquals("Saved VPN", viewModel.uiState.value.profileName)
+        assertFalse(viewModel.uiState.value.isBusy)
+        assertFalse(viewModel.uiState.value.toString().contains("super-secret"))
+        assertEquals(0, repository.saveCalls)
+    }
+
+    private fun shareDecoder() = IkevShareDecoder(IkevProfileParser(CertificateLoader {
+        Date.from(Instant.parse("2030-01-01T00:00:00Z"))
+    }))
+
     private fun createViewModel(
         repository: ProfileRepository,
         controller: VpnPlatformController,
         importedProfile: ImportedIkevProfile? = null,
         onIkevProfileImport: () -> Unit = {},
+        shareLoader: (suspend (String) -> ImportedIkevShare)? = null,
     ): VpnViewModel = VpnViewModel(
         profileRepository = repository,
         certificateImporter = object : CertificateImporter {
             override suspend fun import(uri: Uri): LoadedCertificate = error("Not used in this test")
         },
         ikevProfileImporter = object : IkevProfileImporter {
+            override suspend fun importLink(text: String): ImportedIkevShare =
+                shareLoader?.invoke(text) ?: shareDecoder().decode(text)
+
             override suspend fun import(uri: Uri): ImportedIkevProfile {
                 onIkevProfileImport()
                 return importedProfile ?: error("Not used in this test")
@@ -372,6 +568,7 @@ class VpnViewModelTest {
         override val state = mutableState
         var deleteCalls = 0
         var provisionCalls = 0
+        var provisionedPassword: String? = null
         var savedCredentialAvailable = true
         var restoreFails = false
         var restoredProfile: VpnProfileConfig? = null
@@ -393,6 +590,7 @@ class VpnViewModelTest {
             serverRootCa: X509Certificate?,
         ): VpnResult<ProvisioningAction> {
             provisionCalls += 1
+            provisionedPassword = password
             return VpnResult.Success(ProvisioningAction.Complete)
         }
 

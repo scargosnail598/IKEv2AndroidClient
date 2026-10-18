@@ -204,6 +204,12 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.10.0")
     implementation("androidx.datastore:datastore-preferences:1.2.1")
+    val cameraXVersion = "1.6.2"
+    implementation("androidx.camera:camera-camera2:$cameraXVersion")
+    implementation("androidx.camera:camera-lifecycle:$cameraXVersion")
+    implementation("androidx.camera:camera-view:$cameraXVersion")
+    implementation("com.google.zxing:core:3.5.4")
+
     implementation("androidx.appcompat:appcompat:1.7.1")
     implementation("androidx.core:core:1.17.0")
     implementation("androidx.lifecycle:lifecycle-process:2.9.4")

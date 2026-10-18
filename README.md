@@ -49,7 +49,7 @@ the pinned Gradle 9.5 wrapper.
 ## Supported functionality
 
 - Hostname or IPv4 VPN server addresses
-- One IPv4 full-tunnel profile
+- Multiple IPv4 VPN profiles with separate credentials and routing settings
 - strongSwan VPN service provisioning and Android VPN consent
 - Connect, disconnect, reconnect, and strongSwan-confirmed status
 - Private CA import from DER or PEM
@@ -57,11 +57,12 @@ the pinned Gradle 9.5 wrapper.
 - Manual profile configuration
 - Sanitized diagnostics
 - Persistent light/dark theme selection
+- Per-profile app routing: all apps, only selected apps, or selected apps bypass VPN
 
 ## Current limitations
 
-The app does not currently support IPv6 literals, multiple profiles, QR
-provisioning, SOCKS5 or split-tunnel Proxy Mode, per-app VPN, custom DNS or
+The app does not currently support IPv6 literals, QR
+provisioning, SOCKS5 Proxy Mode, custom DNS or
 routing, Quick Settings, or auto-connect UI.
 
 Connection state and protocol logs come from the strongSwan service and its
@@ -93,6 +94,57 @@ the user selects **Save / Provision VPN**.
 The strongSwan engine accepts a separate server Remote ID. Imported profile
 metadata the UI does not configure, including SOCKS5 Proxy Mode, remains
 informational only.
+
+## Import a configuration link or QR
+
+In the server web panel, open **Users → Link & QR**, optionally include the VPN
+password, then generate the link/QR. Android supports the server's offline
+`ikev://import/v1/<payload>` transport. No panel URL, login, or network request
+is needed to read it.
+
+On the Android setup screen choose:
+
+- **Import configuration link** to enter a link or explicitly paste from the clipboard.
+- **Scan QR** to use the camera; permission is requested only when scanning.
+- **QR image** to select a downloaded PNG/JPEG through Android's document picker.
+- **Import .ikev Profile** to continue using the existing portable file format.
+
+Opening an `ikev://import/v1/…` link in an app that supports custom URI schemes
+also opens the review screen. Some browsers, messengers, and stock camera apps
+do not make custom-scheme text clickable; use paste or the in-app scanner then.
+Scanning uses CameraX and bundled ZXing Core, without Google Play Services or an
+external QR service. Camera access is optional; image and text import still work
+when permission is denied or no camera is available.
+
+Review the server, Remote ID, username, and certificate trust before saving.
+For a private CA, compare the displayed SHA-256 fingerprint with a trusted
+source and confirm trust. The matching embedded fingerprint checks consistency;
+it does not authenticate the sender. Importing alone does not save, connect,
+or disconnect the VPN. Disconnect an active VPN before importing another profile.
+Imports create a **new profile** by default. If a saved profile has the same
+server and username, **Replace a matching saved profile…** explicitly selects
+that target; final confirmation is still required. New imports start with
+**All apps** routing, which you can change before saving.
+
+When the link includes a password, leave the password field empty to use it or
+enter a replacement. When omitted, enter the VPN password yourself. Included
+passwords stay outside UI/saved state and are discarded on backgrounding,
+rotation, cancellation, identity edits, or a new import. After that, re-enter
+the password or import again. Only confirmed provisioning uses the existing
+Android Keystore encrypted credential store. Links and passwords are excluded
+from diagnostics; the clipboard is read only on an explicit paste action.
+
+The decoder accepts only the exact v1 URI, up to 2953 ASCII bytes, with unpadded
+Base64URL and zlib-wrapped DEFLATE. It bounds decompressed JSON to 64 KiB, rejects
+trailing/incomplete streams, malformed or deeply nested JSON, duplicate keys,
+and unsupported share/profile versions, then reuses the `.ikev` profile and CA
+validator. Selected QR images are bounded to 16 MiB encoded and 2048 pixels on
+the longest decoded edge. Links are compressed, not encrypted or signed, and
+have no built-in expiry; distribute password-bearing links/images privately.
+
+The interoperability contract and frozen test fixtures follow server commit
+`39885b00d5a2bfdba10c2c609ccb91a12badc4b5`:
+[configuration sharing](https://github.com/scargosnail598/myIkev2-connection/blob/39885b00d5a2bfdba10c2c609ccb91a12badc4b5/docs/config-sharing.md).
 
 ## Manual configuration
 
@@ -255,3 +307,35 @@ selects a saved configuration after disconnecting and returns to the connection
 screen. Each configuration retains its own CA certificate and encrypted password.
 Editing is available separately through **Edit Profile**. Profiles from older builds
 whose passwords were discarded ask for a password once in a separate dialog.
+
+## Per-app VPN
+
+Disconnect, open **Edit Profile**, and use **Per-app VPN**:
+
+- **All apps** keeps the normal full-tunnel behavior.
+- **Only selected apps use VPN** sends the selected apps through the tunnel;
+  other apps use the regular network. At least one app must be selected.
+- **Selected apps bypass VPN** sends all other apps through the tunnel.
+
+Use **Select apps** to search by app label or package name. **Show system apps**
+includes system packages with internet access. Selected system apps stay visible
+when the toggle is off. Unavailable saved apps remain listed so they can be
+removed. Enter the password and choose **Save / Provision VPN**, then reconnect.
+Canceling profile edits discards routing changes along with other unsaved fields.
+Routing preferences survive relaunch and are retained separately for each saved
+profile. New profiles and profiles from older builds default to **All apps**.
+
+The app's own package is excluded by strongSwan. App routing uses Android's
+VPN app filtering; it does not create an HTTP or SOCKS proxy. Existing `.ikev`
+proxy metadata remains informational and app choices are stored locally.
+If every app in an include list has been uninstalled, tunnel creation fails
+instead of accidentally applying the VPN to all apps, including on reconnect.
+Apps sharing a UID may share routing behavior. Android's always-on VPN option
+**Block connections without VPN** can block bypassed apps; verify the intended
+behavior on the target device.
+
+The picker uses `QUERY_ALL_PACKAGES` because per-app routing includes arbitrary
+packages without launcher activities. App inventory is read locally and is not
+transmitted. Distribution through Google Play requires review of its
+[package visibility permission policy](https://support.google.com/googleplay/android-developer/answer/10158779)
+and the applicable permission declaration.

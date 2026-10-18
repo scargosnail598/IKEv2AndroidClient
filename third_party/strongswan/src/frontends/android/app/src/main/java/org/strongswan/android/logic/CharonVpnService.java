@@ -1354,6 +1354,12 @@ public class CharonVpnService extends VpnService implements Runnable, VpnStateSe
 			{
 				builder.addRoute("::", 0);
 			}
+			/* An empty allowlist must never become an all-app VPN. This also
+			 * covers uninstalling selected apps before automatic reconnects. */
+			if (mAppHandling == SelectedAppsHandling.SELECTED_APPS_ONLY && mSelectedApps.isEmpty())
+			{
+				throw new IllegalArgumentException("No selected VPN applications are installed");
+			}
 			/* apply selected applications */
 			if (mSelectedApps.size() > 0)
 			{
@@ -1373,16 +1379,22 @@ public class CharonVpnService extends VpnService implements Runnable, VpnStateSe
 						}
 						break;
 					case SELECTED_APPS_ONLY:
+						boolean applicationAdded = false;
 						for (String app : mSelectedApps)
 						{
 							try
 							{
 								builder.addAllowedApplication(app);
+								applicationAdded = true;
 							}
 							catch (PackageManager.NameNotFoundException e)
 							{
 								// possible if not configured via GUI or app was uninstalled
 							}
+						}
+						if (!applicationAdded)
+						{
+							throw new IllegalArgumentException("No selected VPN applications are installed");
 						}
 						break;
 					default:

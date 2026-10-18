@@ -12,10 +12,13 @@ import com.saeed.ikev2vpn.data.ProfileRepository
 import com.saeed.ikev2vpn.data.ProvisioningStatus
 import com.saeed.ikev2vpn.data.RepositorySnapshot
 import com.saeed.ikev2vpn.data.VpnProfileConfig
+import com.saeed.ikev2vpn.data.AppRoutingConfig
+import com.saeed.ikev2vpn.data.AppRoutingMode
 import com.saeed.ikev2vpn.diagnostics.DiagnosticSanitizer
 import com.saeed.ikev2vpn.profile.IkevProfileImportException
 import com.saeed.ikev2vpn.profile.IkevProfileImporter
 import com.saeed.ikev2vpn.profile.ImportedProxyMetadata
+import com.saeed.ikev2vpn.profile.ImportedIkevShare
 import com.saeed.ikev2vpn.validation.ProfileField
 import com.saeed.ikev2vpn.validation.ProfileValidator
 import com.saeed.ikev2vpn.vpn.ConnectionState
@@ -51,6 +54,9 @@ class VpnViewModel(
     )
     private val effectChannel = Channel<VpnUiEffect>(Channel.BUFFERED)
     private var latestSnapshot = RepositorySnapshot()
+    private var acceptsSharedPasswords = true
+    private var secretGeneration = 0
+    private var importedPassword: String? = null
     private var selectedCertificate: LoadedCertificate? = null
     private var passwordRequestedProfile: com.saeed.ikev2vpn.data.StoredProfile? = null
     private var draftProfileId = "legacy"
@@ -122,7 +128,21 @@ class VpnViewModel(
         copy(username = value)
     }
 
+    fun updateAppRoutingMode(mode: AppRoutingMode) = updateDraft(ProfileField.APPLICATIONS, preserveImportedInfo = true) {
+        copy(appRouting = appRouting.copy(mode = mode))
+    }
+
+    fun toggleApplication(packageName: String) = updateDraft(ProfileField.APPLICATIONS, preserveImportedInfo = true) {
+        val packages = appRouting.packages
+        copy(appRouting = appRouting.copy(packages = if (packageName in packages) {
+            packages - packageName
+        } else {
+            packages + packageName
+        }))
+    }
+
     fun importCertificate(uri: Uri) {
+        clearImportedPassword()
         val importGeneration = ++setupImportGeneration
         mutableUiState.update { it.copy(isBusy = true, error = null, technicalError = null) }
         viewModelScope.launch {
@@ -151,65 +171,101 @@ class VpnViewModel(
         }
     }
 
-    fun importIkevProfile(uri: Uri) {
-        val state = mutableUiState.value
-        if (state.connectionState in ACTIVE_CONNECTION_STATES) {
-            showError(
-                "Disconnect the VPN before importing another profile.",
-                "Portable profile import was blocked while the current state was " +
-                    "${state.connectionState}.",
-            )
+    fun importIkevProfile(uri: Uri) = importProfile {
+        ImportedIkevShare(ikevProfileImporter.import(uri), null)
+    }
+
+    fun importQrImage(uri: Uri) = importProfile { ikevProfileImporter.importQrImage(uri) }
+
+    fun importConfigurationLink(text: String) {
+        viewModelScope.launch {
+            // External links can arrive before the first repository snapshot.
+            uiState.first { it.initialized }
+            importProfile { ikevProfileImporter.importLink(text) }
+        }
+    }
+
+    private fun importProfile(load: suspend () -> ImportedIkevShare) {
+        if (!canChangeProfile()) {
+            mutableUiState.update { it.copy(
+                error = "Disconnect the VPN and finish the current operation before importing a profile.",
+                technicalError = "Profile import is unavailable in the current VPN state.",
+            ) }
             return
         }
-
         val importGeneration = ++setupImportGeneration
+        clearImportedPassword()
+        val importSecretGeneration = secretGeneration
         mutableUiState.update { it.copy(isBusy = true, error = null, technicalError = null) }
         viewModelScope.launch {
             try {
-                val imported = ikevProfileImporter.import(uri)
+                val shared = load()
                 if (importGeneration != setupImportGeneration) return@launch
+                val imported = shared.profile
+                draftInitialized = true
+                draftProfileId = java.util.UUID.randomUUID().toString()
                 selectedCertificate = imported.certificate
+                importedPassword = shared.password.takeIf { acceptsSharedPasswords && secretGeneration == importSecretGeneration }
                 mutableUiState.update { current ->
                     current.copy(
                         screen = AppScreen.SETUP,
+                        draftRevision = current.draftRevision + 1,
                         profileName = imported.config.profileName,
                         serverAddress = imported.config.serverAddress,
                         username = imported.config.username,
+                        appRouting = AppRoutingConfig(),
                         certificateInfo = imported.certificate?.info,
                         usesPublicCertificateTrust = imported.usesPublicCertificateTrust,
+                        hasImportedPassword = importedPassword != null,
+                        importReplacementProfileId = null,
                         importedProfileInfo = ImportedProfileUiInfo(
                             remoteId = imported.remoteId,
                             serverProfile = imported.serverProfile,
                             proxySummary = proxySummary(imported.proxy),
                             importRevision = importGeneration,
                         ),
-                        fieldErrors = current.fieldErrors - setOf(
-                            ProfileField.PROFILE_NAME,
-                            ProfileField.SERVER_ADDRESS,
-                            ProfileField.USERNAME,
-                            ProfileField.CERTIFICATE,
-                            ProfileField.PASSWORD,
-                        ),
+                        fieldErrors = emptyMap(),
                         isBusy = false,
                     )
                 }
             } catch (exception: CancellationException) {
                 throw exception
             } catch (exception: IkevProfileImportException) {
-                if (importGeneration != setupImportGeneration) return@launch
-                showError(exception.message, technicalMessage(exception))
+                if (importGeneration == setupImportGeneration) showError(exception.message, technicalMessage(exception))
             } catch (exception: CertificateLoadException) {
-                if (importGeneration != setupImportGeneration) return@launch
-                showError(exception.message, technicalMessage(exception))
+                if (importGeneration == setupImportGeneration) showError(exception.message, technicalMessage(exception))
             } catch (exception: Exception) {
-                if (importGeneration != setupImportGeneration) return@launch
-                showError("The .ikev profile could not be read.", technicalMessage(exception))
+                if (importGeneration == setupImportGeneration) {
+                    showError("The configuration could not be imported.", technicalMessage(exception))
+                }
             }
         }
     }
 
+    fun setImportForeground(foreground: Boolean) {
+        acceptsSharedPasswords = foreground
+        if (!foreground) clearImportedPassword()
+    }
+
+    fun clearImportedPassword() {
+        secretGeneration += 1
+        importedPassword = null
+        mutableUiState.update { it.copy(hasImportedPassword = false) }
+    }
+
+    fun replaceImportedProfile(profileId: String?) {
+        val state = uiState.value
+        if (!canChangeProfile() || state.importedProfileInfo == null) return
+        val existing = state.profiles.firstOrNull { it.config.id == profileId }
+        if (profileId != null && (existing == null ||
+                existing.config.serverAddress != state.serverAddress || existing.config.username != state.username)) return
+        draftProfileId = existing?.config?.id ?: java.util.UUID.randomUUID().toString()
+        mutableUiState.update { it.copy(importReplacementProfileId = existing?.config?.id) }
+    }
+
     /** Password is consumed synchronously and is never copied into VpnUiState or persisted state. */
     fun provisionProfile(password: String) {
+        val effectivePassword = password.ifEmpty { importedPassword.orEmpty() }
         val state = mutableUiState.value
         if (state.isBusy || consentRequestActive) return
         if (state.configured && state.connectionState in ACTIVE_CONNECTION_STATES) {
@@ -224,8 +280,9 @@ class VpnViewModel(
             profileName = state.profileName,
             serverAddress = state.serverAddress,
             username = state.username,
-            password = password,
+            password = effectivePassword,
             hasCertificate = certificate != null || state.usesPublicCertificateTrust,
+            appRouting = state.appRouting,
         )
         if (!validation.isValid) {
             mutableUiState.update { it.copy(fieldErrors = validation.errors) }
@@ -244,7 +301,9 @@ class VpnViewModel(
             serverAddress = state.serverAddress.trim(),
             username = state.username.trim(),
             id = draftProfileId,
+            appRouting = state.appRouting,
         )
+        clearImportedPassword()
         mutableUiState.update { it.copy(isBusy = true, error = null, technicalError = null) }
         viewModelScope.launch {
             var staged = false
@@ -254,7 +313,7 @@ class VpnViewModel(
                 profileRepository.stageProfile(config, certificate)
                 staged = true
                 ensureActive()
-                when (val result = vpnController.provision(config, password, certificate?.certificate)) {
+                when (val result = vpnController.provision(config, effectivePassword, certificate?.certificate)) {
                     is VpnResult.Failure -> {
                         abortStagedProvision(
                             result.userMessage,
@@ -378,18 +437,21 @@ class VpnViewModel(
     }
 
     fun addProfile() {
+        clearImportedPassword()
         if (!canChangeProfile()) return
         draftProfileId = java.util.UUID.randomUUID().toString()
         selectedCertificate = null
         setupImportGeneration += 1
         mutableUiState.update {
             it.copy(screen = AppScreen.SETUP, draftRevision = it.draftRevision + 1, profileName = "", serverAddress = "", username = "",
+                appRouting = AppRoutingConfig(),
                 certificateInfo = null, usesPublicCertificateTrust = false, importedProfileInfo = null,
                 fieldErrors = emptyMap(), error = null, technicalError = null)
         }
     }
 
     fun selectProfile(id: String) {
+        clearImportedPassword()
         if (!canChangeProfile()) return
         val target = latestSnapshot.profiles.firstOrNull { it.config.id == id }
             ?: latestSnapshot.profile?.takeIf { it.config.id == id }
@@ -479,6 +541,7 @@ class VpnViewModel(
         mutableUiState.value.connectionState !in ACTIVE_CONNECTION_STATES
 
     fun showSetup() {
+        clearImportedPassword()
         if (mutableUiState.value.isBusy || consentRequestActive) return
         val state = mutableUiState.value
         if (state.connectionState in ACTIVE_CONNECTION_STATES) {
@@ -499,6 +562,7 @@ class VpnViewModel(
                     profileName = profile.config.profileName,
                     serverAddress = profile.config.serverAddress,
                     username = profile.config.username,
+                    appRouting = profile.config.appRouting,
                     certificateInfo = profile.certificate?.info,
                     usesPublicCertificateTrust = profile.certificate == null,
                     importedProfileInfo = null,
@@ -509,6 +573,7 @@ class VpnViewModel(
     }
 
     fun showMain() {
+        clearImportedPassword()
         if (mutableUiState.value.isBusy) return
         mutableUiState.update { current ->
             val committed = latestSnapshot.profile?.takeIf {
@@ -522,6 +587,7 @@ class VpnViewModel(
                     profileName = committed.config.profileName,
                     serverAddress = committed.config.serverAddress,
                     username = committed.config.username,
+                    appRouting = committed.config.appRouting,
                     certificateInfo = committed.certificate?.info,
                     usesPublicCertificateTrust = committed.certificate == null,
                     importedProfileInfo = null,
@@ -566,6 +632,7 @@ class VpnViewModel(
                     profileName = displayedProfile.config.profileName,
                     serverAddress = displayedProfile.config.serverAddress,
                     username = displayedProfile.config.username,
+                    appRouting = displayedProfile.config.appRouting,
                     certificateInfo = displayedProfile.certificate?.info,
                     usesPublicCertificateTrust = displayedProfile.certificate == null,
                 )
@@ -639,6 +706,7 @@ class VpnViewModel(
                 profileName = committed.config.profileName,
                 serverAddress = committed.config.serverAddress,
                 username = committed.config.username,
+                appRouting = committed.config.appRouting,
                 certificateInfo = committed.certificate?.info,
                 usesPublicCertificateTrust = committed.certificate == null,
                 configured = true,
@@ -700,6 +768,7 @@ class VpnViewModel(
                 profileName = restored?.config?.profileName ?: it.profileName,
                 serverAddress = restored?.config?.serverAddress ?: it.serverAddress,
                 username = restored?.config?.username ?: it.username,
+                appRouting = restored?.config?.appRouting ?: it.appRouting,
                 certificateInfo = restored?.certificate?.info ?: it.certificateInfo,
                 configured = restoredConfigured,
                 provisioningStatus = restored?.status ?: ProvisioningStatus.DRAFT,
@@ -730,11 +799,17 @@ class VpnViewModel(
 
     private fun updateDraft(
         field: ProfileField,
+        preserveImportedInfo: Boolean = false,
         transform: VpnUiState.() -> VpnUiState,
     ) {
+        if (!preserveImportedInfo) {
+            clearImportedPassword()
+            draftProfileId = if (uiState.value.importedProfileInfo != null) java.util.UUID.randomUUID().toString() else draftProfileId
+        }
         mutableUiState.update { current ->
             current.transform().copy(
-                importedProfileInfo = null,
+                importReplacementProfileId = if (preserveImportedInfo) current.importReplacementProfileId else null,
+                importedProfileInfo = if (preserveImportedInfo) current.importedProfileInfo else null,
                 fieldErrors = current.fieldErrors - field,
             )
         }

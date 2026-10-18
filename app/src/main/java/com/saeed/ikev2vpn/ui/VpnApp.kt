@@ -1,6 +1,11 @@
 package com.saeed.ikev2vpn.ui
 
 import android.app.Activity
+import android.content.Intent
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -25,6 +30,23 @@ fun VpnApp(
     onDarkModeChanged: (Boolean) -> Unit,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    var linkDialogOpen by remember { mutableStateOf(false) }
+    val qrImagePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let(viewModel::importQrImage)
+    }
+    val qrScanner = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            result.data?.getStringExtra(Intent.EXTRA_TEXT)?.let(viewModel::importConfigurationLink)
+            result.data?.removeExtra(Intent.EXTRA_TEXT)
+        }
+    }
+    if (linkDialogOpen) {
+        ConfigurationLinkDialog(
+            onDismiss = { linkDialogOpen = false },
+            onImport = { text -> linkDialogOpen = false; viewModel.importConfigurationLink(text) },
+        )
+    }
     val lifecycleOwner = LocalLifecycleOwner.current
     val certificatePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
@@ -53,6 +75,7 @@ fun VpnApp(
     DisposableEffect(lifecycleOwner, viewModel) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) viewModel.refreshState()
+            if (event == Lifecycle.Event.ON_STOP) linkDialogOpen = false
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
@@ -83,6 +106,12 @@ fun VpnApp(
             onProfileNameChanged = viewModel::updateProfileName,
             onServerChanged = viewModel::updateServerAddress,
             onUsernameChanged = viewModel::updateUsername,
+            onAppRoutingModeChanged = viewModel::updateAppRoutingMode,
+            onToggleApplication = viewModel::toggleApplication,
+            onImportLink = { linkDialogOpen = true },
+            onScanQr = { qrScanner.launch(Intent(context, QrScannerActivity::class.java)) },
+            onImportQrImage = { qrImagePicker.launch(arrayOf("image/*")) },
+            onReplaceImportedProfile = viewModel::replaceImportedProfile,
             onImportIkevProfile = { ikevProfilePicker.launch(arrayOf("*/*")) },
             onImportCertificate = { certificatePicker.launch(arrayOf("*/*")) },
             onProvision = viewModel::provisionProfile,

@@ -120,6 +120,7 @@ class StrongSwanVpnController(context: Context) : VpnPlatformController {
                 profile.flags = 0
                 profile.certificateAlias = certificateAlias
                 profile.isReadOnly = false
+                profile.applyAppRouting(config.appRouting)
 
                 val stored = if (previous == null) {
                     source.insertProfile(profile)

@@ -1,6 +1,8 @@
 package com.saeed.ikev2vpn.validation
 
 import java.net.IDN
+import com.saeed.ikev2vpn.data.AppRoutingConfig
+import com.saeed.ikev2vpn.data.AppRoutingMode
 
 enum class ProfileField {
     PROFILE_NAME,
@@ -8,6 +10,7 @@ enum class ProfileField {
     USERNAME,
     PASSWORD,
     CERTIFICATE,
+    APPLICATIONS,
 }
 
 data class ValidationResult(
@@ -23,6 +26,7 @@ object ProfileValidator {
         username: String,
         password: String,
         hasCertificate: Boolean,
+        appRouting: AppRoutingConfig = AppRoutingConfig(),
     ): ValidationResult {
         val errors = buildMap {
             if (profileName.isBlank()) {
@@ -62,6 +66,9 @@ object ProfileValidator {
                 put(ProfileField.PASSWORD, "Enter the VPN password.")
             } else if (password.length > MAX_PASSWORD_LENGTH) {
                 put(ProfileField.PASSWORD, "Password must be $MAX_PASSWORD_LENGTH characters or fewer.")
+            }
+            if (appRouting.mode == AppRoutingMode.ONLY_SELECTED && appRouting.packages.isEmpty()) {
+                put(ProfileField.APPLICATIONS, "Select at least one app to use the VPN.")
             }
             if (!hasCertificate) {
                 put(ProfileField.CERTIFICATE, "Import the VPN CA certificate.")

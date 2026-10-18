@@ -5,6 +5,7 @@ object DiagnosticSanitizer {
     private val credentialAssignment = Regex(
         pattern = "(?i)\\b(password|passphrase|passwd|pwd)\\b\\s*[:=]\\s*\\S+",
     )
+    private val configurationUri = Regex("(?i)ikev://[^\\s]+")
     private val contentUri = Regex("(?i)content://\\S+")
 
     fun exceptionType(exception: Exception): String = exception.javaClass.name
@@ -13,6 +14,7 @@ object DiagnosticSanitizer {
         return value
             .map { character -> if (character.isISOControl()) ' ' else character }
             .joinToString(separator = "")
+            .replace(configurationUri, "ikev://<redacted>")
             .replace(credentialAssignment) { match ->
                 "${match.groupValues[1]}=<redacted>"
             }

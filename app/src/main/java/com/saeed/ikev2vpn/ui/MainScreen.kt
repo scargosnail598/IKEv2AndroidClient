@@ -52,6 +52,16 @@ fun MainScreen(
         Text("IKEv2 VPN", style = MaterialTheme.typography.headlineMedium)
         ProfileSelector(state, onSelectProfile, onAddProfile)
         Text("${state.username} · ${state.serverAddress}", style = MaterialTheme.typography.bodySmall)
+        Text(
+            when (state.appRouting.mode) {
+                com.saeed.ikev2vpn.data.AppRoutingMode.ALL -> "VPN routing: all apps"
+                com.saeed.ikev2vpn.data.AppRoutingMode.ONLY_SELECTED ->
+                    "VPN routing: only ${state.appRouting.packages.size} selected apps"
+                com.saeed.ikev2vpn.data.AppRoutingMode.EXCLUDE_SELECTED ->
+                    "VPN routing: ${state.appRouting.packages.size} selected apps bypass VPN"
+            },
+            style = MaterialTheme.typography.bodySmall,
+        )
         Spacer(Modifier.height(32.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(

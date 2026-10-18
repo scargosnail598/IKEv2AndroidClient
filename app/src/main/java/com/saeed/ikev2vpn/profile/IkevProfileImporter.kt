@@ -38,6 +38,12 @@ data class ImportedProxyMetadata(
 
 interface IkevProfileImporter {
     suspend fun import(uri: Uri): ImportedIkevProfile
+    suspend fun importQrImage(uri: Uri): ImportedIkevShare {
+        throw IkevProfileImportException("QR image import is unavailable.")
+    }
+    suspend fun importLink(text: String): ImportedIkevShare {
+        throw IkevProfileImportException("Configuration link import is unavailable.")
+    }
 }
 
 class AndroidIkevProfileImporter(
@@ -45,6 +51,14 @@ class AndroidIkevProfileImporter(
     certificateLoader: CertificateLoader,
 ) : IkevProfileImporter {
     private val parser = IkevProfileParser(certificateLoader)
+
+    override suspend fun importQrImage(uri: Uri): ImportedIkevShare = withContext(Dispatchers.IO) {
+        IkevShareDecoder(parser).decode(QrImageReader(contentResolver).read(uri))
+    }
+
+    override suspend fun importLink(text: String): ImportedIkevShare = withContext(Dispatchers.Default) {
+        IkevShareDecoder(parser).decode(text)
+    }
 
     override suspend fun import(uri: Uri): ImportedIkevProfile = withContext(Dispatchers.IO) {
         val bytes = try {

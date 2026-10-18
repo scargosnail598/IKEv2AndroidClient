@@ -2,6 +2,7 @@ package com.saeed.ikev2vpn.ui
 
 import com.saeed.ikev2vpn.certificate.CertificateInfo
 import com.saeed.ikev2vpn.data.ProvisioningStatus
+import com.saeed.ikev2vpn.data.AppRoutingConfig
 import com.saeed.ikev2vpn.validation.ProfileField
 import com.saeed.ikev2vpn.vpn.ConnectionState
 import com.saeed.ikev2vpn.vpn.StateEvidence
@@ -38,8 +39,11 @@ data class VpnUiState(
     val profileName: String = "",
     val serverAddress: String = "",
     val username: String = "",
+    val appRouting: AppRoutingConfig = AppRoutingConfig(),
     val certificateInfo: CertificateInfo? = null,
     val usesPublicCertificateTrust: Boolean = false,
+    val hasImportedPassword: Boolean = false,
+    val importReplacementProfileId: String? = null,
     val importedProfileInfo: ImportedProfileUiInfo? = null,
     val sessionId: String? = null,
     val error: String? = null,
