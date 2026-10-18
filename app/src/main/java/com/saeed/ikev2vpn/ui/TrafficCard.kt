@@ -8,12 +8,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import com.saeed.ikev2vpn.data.AppRoutingConfig
+import com.saeed.ikev2vpn.vpn.ServerPingReading
 import com.saeed.ikev2vpn.vpn.VpnTraffic
 import java.util.Locale
 
 @Composable
 internal fun TrafficCard(traffic: VpnTraffic?, connected: Boolean, serverAddress: String,
-    sessionId: String?, routing: com.saeed.ikev2vpn.data.AppRoutingConfig) {
+    routing: AppRoutingConfig, ping: ServerPingReading, onRefreshPing: () -> Unit) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -29,7 +31,7 @@ internal fun TrafficCard(traffic: VpnTraffic?, connected: Boolean, serverAddress
                 TrafficValue("Upload · Out", VpnIcons.Upload, traffic?.uploadBytes, Modifier.weight(1f))
             }
             HorizontalDivider()
-            ServerPingRow(serverAddress, sessionId, connected, routing)
+            ServerPingRow(serverAddress, connected, routing, ping, onRefreshPing)
         }
     }
 }

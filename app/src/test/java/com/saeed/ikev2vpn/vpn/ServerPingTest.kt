@@ -58,15 +58,18 @@ class ServerPingTest {
         verify(child).destroyForcibly()
     }
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-    @Test fun `sampling waits five seconds and clears a previous success on failure`() = runTest {
+    @Test fun `each request finishes after exactly one echo without periodic sampling`() = runTest {
         var calls = 0
         val monitor = ServerPingMonitor { host ->
             assertEquals("vpn.example", host)
             if (calls++ == 0) PingSample(21.0) else null
         }
-        val readings = monitor.readings("vpn.example").take(3).toList()
-        assertEquals(listOf(ServerPingReading.Checking, ServerPingReading.Measured(PingSample(21.0)), ServerPingReading.Unavailable), readings)
-        assertEquals(5000L, testScheduler.currentTime)
+        assertEquals(listOf(ServerPingReading.Checking, ServerPingReading.Measured(PingSample(21.0))),
+            monitor.readings("vpn.example").toList())
+        testScheduler.advanceTimeBy(60_000)
+        assertEquals(1, calls)
+        assertEquals(listOf(ServerPingReading.Checking, ServerPingReading.Unavailable),
+            monitor.readings("vpn.example").toList())
         assertEquals(2, calls)
     }
     @Test fun `stopping sampling cancels the probe without publishing a false failure`() = runTest {

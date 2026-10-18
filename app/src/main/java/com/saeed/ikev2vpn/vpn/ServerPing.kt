@@ -3,7 +3,6 @@ package com.saeed.ikev2vpn.vpn
 import com.saeed.ikev2vpn.validation.ProfileValidator
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.runInterruptible
@@ -28,13 +27,10 @@ fun interface ServerPingProbe { suspend fun measure(host: String): PingSample? }
 class ServerPingMonitor(private val probe: ServerPingProbe) {
     fun readings(host: String): Flow<ServerPingReading> = flow {
         emit(ServerPingReading.Checking)
-        while (true) {
-            val result = try { probe.measure(host) }
-            catch (exception: CancellationException) { throw exception }
-            catch (_: Exception) { null }
-            emit(result?.let(ServerPingReading::Measured) ?: ServerPingReading.Unavailable)
-            delay(5000)
-        }
+        val result = try { probe.measure(host) }
+        catch (exception: CancellationException) { throw exception }
+        catch (_: Exception) { null }
+        emit(result?.let(ServerPingReading::Measured) ?: ServerPingReading.Unavailable)
     }
 }
 

@@ -29,6 +29,9 @@ import com.saeed.ikev2vpn.vpn.VpnPlatformController
 import com.saeed.ikev2vpn.vpn.VpnResult
 import com.saeed.ikev2vpn.vpn.VpnState
 import com.saeed.ikev2vpn.vpn.VpnTraffic
+import com.saeed.ikev2vpn.vpn.PingSample
+import com.saeed.ikev2vpn.vpn.ServerPingProbe
+import com.saeed.ikev2vpn.vpn.ServerPingReading
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -669,6 +672,48 @@ class VpnViewModelTest {
         assertEquals(null, unconfirmed.uiState.value.traffic)
     }
 
+    @Test
+    fun `ping survives navigation traffic and resume until tapped or reconnected`() = runTest {
+        var calls = 0
+        val controller = FakeVpnController(VpnState(connectionState = ConnectionState.CONNECTED, confirmed = true,
+            sessionId = "first"))
+        val viewModel = createViewModel(FakeProfileRepository(provisionedSnapshot(testCertificate())), controller,
+            pingProbe = ServerPingProbe { PingSample((++calls * 10).toDouble()) })
+        assertEquals(1, calls)
+        assertEquals(ServerPingReading.Measured(PingSample(10.0)), viewModel.serverPing.value)
+        viewModel.showProfiles()
+        viewModel.showMain()
+        viewModel.showAbout()
+        viewModel.showMain()
+        viewModel.refreshState()
+        controller.state.value = controller.state.value.copy(traffic = VpnTraffic(100, 50))
+        testScheduler.advanceTimeBy(60_000)
+        assertEquals(1, calls)
+        assertEquals(ServerPingReading.Measured(PingSample(10.0)), viewModel.serverPing.value)
+        viewModel.refreshServerPing()
+        assertEquals(2, calls)
+        assertEquals(ServerPingReading.Measured(PingSample(20.0)), viewModel.serverPing.value)
+        controller.state.value = controller.state.value.copy(connectionState = ConnectionState.DISCONNECTED)
+        assertEquals(ServerPingReading.Inactive, viewModel.serverPing.value)
+        controller.state.value = controller.state.value.copy(connectionState = ConnectionState.CONNECTED, sessionId = "next")
+        assertEquals(3, calls)
+    }
+
+    @Test
+    fun `ping waits for a configured and confirmed connection`() = runTest {
+        var calls = 0
+        val probe = ServerPingProbe { calls++; PingSample(10.0) }
+        val connected = VpnState(connectionState = ConnectionState.CONNECTED, confirmed = true)
+        val unconfigured = createViewModel(FakeProfileRepository(RepositorySnapshot()), FakeVpnController(connected), pingProbe = probe)
+        unconfigured.refreshServerPing()
+        val controller = FakeVpnController(connected.copy(confirmed = false))
+        val viewModel = createViewModel(FakeProfileRepository(provisionedSnapshot(testCertificate())), controller, pingProbe = probe)
+        viewModel.refreshServerPing()
+        assertEquals(0, calls)
+        controller.state.value = connected
+        assertEquals(1, calls)
+    }
+
     private fun shareDecoder() = IkevShareDecoder(IkevProfileParser(CertificateLoader {
         Date.from(Instant.parse("2030-01-01T00:00:00Z"))
     }))
@@ -679,6 +724,7 @@ class VpnViewModelTest {
         importedProfile: ImportedIkevProfile? = null,
         onIkevProfileImport: () -> Unit = {},
         shareLoader: (suspend (String) -> ImportedIkevShare)? = null,
+        pingProbe: ServerPingProbe = ServerPingProbe { null },
     ): VpnViewModel = VpnViewModel(
         profileRepository = repository,
         certificateImporter = object : CertificateImporter {
@@ -694,6 +740,7 @@ class VpnViewModelTest {
             }
         },
         vpnController = controller,
+        pingProbe = pingProbe,
     )
 
     private fun provisionedSnapshot(certificate: LoadedCertificate) = RepositorySnapshot(

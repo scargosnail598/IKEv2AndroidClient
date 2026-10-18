@@ -5,7 +5,7 @@ and the strongSwan userland VPN engine.
 
 ## Status and version
 
-The current application version is **1.4.4** (`versionCode = 10`). The Gradle
+The current application version is **1.4.5** (`versionCode = 11`). The Gradle
 configuration in `app/build.gradle.kts` is the version source of truth.
 
 The repository is maintained as an independent Android project. Release-device
@@ -262,9 +262,13 @@ own license in the pinned source archive.
 ## Server ping on the home screen
 
 The Connection stats card shows **Server ping** to the selected profile’s server
-using one ICMP echo. Sampling runs only while a confirmed VPN session is connected
-and the Connection screen is visible, with five seconds between probes. Leaving
-the screen, backgrounding, disconnecting, or changing sessions cancels the probe.
+using one ICMP echo. A confirmed connection triggers one initial test. The result
+stays visible until you tap the ping row to run one more test; there is no periodic
+sampling. Repeated taps while checking do not start overlapping tests. Navigating
+between screens, backgrounding/resuming, and rotating the device retain the result
+for the same session without starting another test. Disconnecting or changing the
+server, profile, routing, or session cancels any pending probe and clears its result.
+A pending test may finish in the background, within the existing timeout.
 
 The target is shown below the label. The measurement follows this app’s per-app
 routing; **Outside VPN** is shown when the VPN app is excluded. It is a round-trip
@@ -359,15 +363,15 @@ read -rsp "Key password: " ANDROID_KEY_PASSWORD; export ANDROID_KEY_PASSWORD; pr
 An explicit release task fails when any signing value is missing. Debug builds,
 tests, and lint do not read or require signing credentials.
 
-After completing [RELEASE_TESTING.md](RELEASE_TESTING.md), build v1.4.4 with:
+After completing [RELEASE_TESTING.md](RELEASE_TESTING.md), build v1.4.5 with:
 
 ```bash
 ./gradlew --no-daemon --no-configuration-cache clean assembleRelease
 mkdir -p dist
-cp app/build/outputs/apk/release/app-release.apk dist/ikev2-android-v1.4.4.apk
-apksigner verify --verbose --print-certs dist/ikev2-android-v1.4.4.apk
-(cd dist && sha256sum ikev2-android-v1.4.4.apk > ikev2-android-v1.4.4.apk.sha256)
-(cd dist && sha256sum -c ikev2-android-v1.4.4.apk.sha256)
+cp app/build/outputs/apk/release/app-release.apk dist/ikev2-android-v1.4.5.apk
+apksigner verify --verbose --print-certs dist/ikev2-android-v1.4.5.apk
+(cd dist && sha256sum ikev2-android-v1.4.5.apk > ikev2-android-v1.4.5.apk.sha256)
+(cd dist && sha256sum -c ikev2-android-v1.4.5.apk.sha256)
 unset ANDROID_KEYSTORE_PATH ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD
 ```
 
@@ -379,7 +383,7 @@ for every update.
 
 `dist/` is ignored. After the signed release candidate passes the manual device
 checklist, run **Tag Android Release** from the Actions tab on `main`, enter
-`1.4.4`, and confirm device validation. The workflow checks that the requested
+`1.4.5`, and confirm device validation. The workflow checks that the requested
 version matches Gradle, runs unsigned CI validation, creates the annotated tag,
 and starts **Android Release** to build and publish the signed APK and checksum.
 The Android Release workflow can also be started manually for an existing tag.

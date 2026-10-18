@@ -36,6 +36,7 @@ fun VpnApp(
     onNotificationSettings: () -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val serverPing by viewModel.serverPing.collectAsStateWithLifecycle()
     val updateState by updateViewModel.state.collectAsStateWithLifecycle()
     LaunchedEffect(state.initialized, state.configured) {
         if (state.initialized && state.configured) onConfigured()
@@ -162,6 +163,7 @@ fun VpnApp(
                     onDarkModeChanged = onDarkModeChanged, onDismissError = viewModel::dismissError,
                     onAbout = viewModel::showAbout,
                     onNotificationSettings = onNotificationSettings,
+                    serverPing = serverPing, onRefreshPing = viewModel::refreshServerPing,
                     onCheckUpdates = { viewModel.showAbout(); updateViewModel.check() },
                 )
                 AppScreen.PROFILES -> ProfilesScreen(

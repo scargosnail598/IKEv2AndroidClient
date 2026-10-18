@@ -22,6 +22,10 @@ import com.saeed.ikev2vpn.profile.ImportedIkevShare
 import com.saeed.ikev2vpn.validation.ProfileField
 import com.saeed.ikev2vpn.validation.ProfileValidator
 import com.saeed.ikev2vpn.vpn.ConnectionState
+import com.saeed.ikev2vpn.vpn.AndroidServerPingProbe
+import com.saeed.ikev2vpn.vpn.ServerPingProbe
+import com.saeed.ikev2vpn.vpn.ServerPingSession
+import com.saeed.ikev2vpn.vpn.ServerPingTarget
 import com.saeed.ikev2vpn.vpn.ProvisioningAction
 import com.saeed.ikev2vpn.vpn.StateEvidence
 import com.saeed.ikev2vpn.vpn.VpnPlatformController
@@ -34,6 +38,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.ensureActive
@@ -49,6 +55,7 @@ class VpnViewModel(
     private val certificateImporter: CertificateImporter,
     private val ikevProfileImporter: IkevProfileImporter,
     private val vpnController: VpnPlatformController,
+    pingProbe: ServerPingProbe = AndroidServerPingProbe(),
 ) : ViewModel() {
     private val mutableUiState = MutableStateFlow(
         VpnUiState(platformSupported = vpnController.isPlatformSupported()),
@@ -69,8 +76,19 @@ class VpnViewModel(
 
     val uiState: StateFlow<VpnUiState> = mutableUiState.asStateFlow()
     val effects = effectChannel.receiveAsFlow()
+    private val pingSession = ServerPingSession(viewModelScope, pingProbe)
+    val serverPing = pingSession.reading
+
+    fun refreshServerPing() = pingSession.refresh()
 
     init {
+        viewModelScope.launch {
+            uiState.map { state ->
+                if (state.configured && state.connectionState == ConnectionState.CONNECTED && state.stateConfirmed) {
+                    ServerPingTarget(state.selectedProfileId, state.serverAddress, state.sessionId, state.appRouting)
+                } else null
+            }.distinctUntilChanged().collect(pingSession::setTarget)
+        }
         viewModelScope.launch {
             profileRepository.snapshots.collect(::applyRepositorySnapshot)
         }

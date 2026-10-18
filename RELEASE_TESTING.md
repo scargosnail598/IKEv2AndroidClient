@@ -1,7 +1,7 @@
-# Android v1.4.4 Release Testing
+# Android v1.4.5 Release Testing
 
 Complete this checklist against the release candidate before creating
-`android-v1.4.4`. Record only observed results as `PASS`, `FAIL`, or `BLOCKED`;
+`android-v1.4.5`. Record only observed results as `PASS`, `FAIL`, or `BLOCKED`;
 this document is not evidence that any test has already passed.
 
 ## Device record matrix
@@ -175,7 +175,7 @@ Perform each case independently and restore the valid profile afterward:
 | APK checksum verified |  |  |
 | Signing key backup verified |  |  |
 
-Do not mark v1.4.4 ready while any required gate has failed or remains
+Do not mark v1.4.5 ready while any required gate has failed or remains
 unexplained. Attach only sanitized evidence and record device-specific quirks.
 
 ## Connection and profiles UX
@@ -218,7 +218,7 @@ unexplained. Attach only sanitized evidence and record device-specific quirks.
 
 ## About and in-app updater
 
-- [ ] About displays version 1.4.4 / code 10, the build type, source link, and update controls.
+- [ ] About displays version 1.4.5 / code 11, the build type, source link, and update controls.
 - [ ] Verify no-release, offline, GitHub rate-limit, already-current, and newer-release states.
 - [ ] Download a newer official release with the same signing key; verify progress,
       cancellation/retry, release notes, SHA-256, and no profile/credential changes.
@@ -315,3 +315,34 @@ tests, native traffic tests and lint passed. Physical-device ICMP execution
 and the API 30–32 / API 33+ device matrix remain unverified in this environment.
 Publication proceeds with that documented exception and does not mark those
 device checks as passed. The existing production signing key is retained.
+
+## v1.4.5 manual server ping
+
+- [ ] Connect and verify one initial ICMP echo runs. Wait at least 30 seconds:
+      the result must stay unchanged and no periodic echoes should run.
+- [ ] Tap the Server ping row: show Checking, send one echo, then keep its result.
+      Tap repeatedly while checking: only one probe may run at a time.
+- [ ] Switch to Profiles/About and back, background/resume, and rotate the device:
+      retain the result for the same session without starting another echo.
+- [ ] Block ICMP: one test shows Unavailable and stays there without automatic
+      retries. Unblock it and tap again: show the new result.
+- [ ] Disconnect during a probe and reconnect: cancel the old test, clear its
+      result and run one initial test for the new session. Late replies from the
+      old session must never replace the new reading.
+- [ ] Verify TalkBack announces a test action, a usable touch target, and readable
+      layout with large fonts. Disconnected/checking rows must not trigger tests.
+- [ ] Upgrade the signed v1.4.4 APK to v1.4.5 / code 11 without losing profiles.
+
+Physical-device ping execution, UI interaction and installation remain unverified
+in this build environment. Automated coverage checks one-shot sampling, retained
+results, explicit refresh, overlapping-tap prevention, connection changes and
+cancellation/stale replies; device checks above are still required.
+
+### v1.4.5 publication record — 2026-10-18
+
+The maintainer requested publication after the local signed build, 157 JVM
+tests, native traffic tests and lint passed. Physical-device ping execution,
+UI interaction, installation and the API 30–32 / API 33+ device matrix remain
+unverified in this environment. Publication proceeds with that documented
+exception and does not mark those device checks as passed. The existing
+production signing key is retained.

@@ -12,6 +12,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.saeed.ikev2vpn.vpn.ConnectionState
+import com.saeed.ikev2vpn.vpn.ServerPingReading
 import kotlinx.coroutines.delay
 import java.text.DateFormat
 import java.util.Date
@@ -24,6 +25,8 @@ fun MainScreen(
     darkMode: Boolean, onDarkModeChanged: (Boolean) -> Unit, onDismissError: () -> Unit,
     onAbout: () -> Unit = {}, onCheckUpdates: () -> Unit = {},
     onNotificationSettings: () -> Unit = {},
+    serverPing: ServerPingReading = ServerPingReading.Inactive,
+    onRefreshPing: () -> Unit = {},
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     val connected = state.connectionState == ConnectionState.CONNECTED && state.stateConfirmed
@@ -123,7 +126,8 @@ fun MainScreen(
                 })
             }
         }
-        if (state.configured) TrafficCard(state.traffic.takeIf { connected }, connected, state.serverAddress, state.sessionId, state.appRouting)
+        if (state.configured) TrafficCard(state.traffic.takeIf { connected }, connected, state.serverAddress,
+            state.appRouting, serverPing.takeIf { connected } ?: ServerPingReading.Inactive, onRefreshPing)
         state.error?.let { ErrorCard(it, onDismissError) }
         if (state.configured) SessionCard(state, onDiagnostics)
         if (state.provisioningStatus == com.saeed.ikev2vpn.data.ProvisioningStatus.PENDING_CONSENT) {
