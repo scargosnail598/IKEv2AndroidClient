@@ -45,10 +45,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.google.zxing.PlanarYUVLuminanceSource
 import com.saeed.ikev2vpn.profile.QrCodeDecoder
+import com.saeed.ikev2vpn.Ikev2VpnApplication
+import com.saeed.ikev2vpn.data.AppTheme
 import com.saeed.ikev2vpn.ui.theme.Ikev2VpnTheme
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -58,7 +61,10 @@ class QrScannerActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            Ikev2VpnTheme(darkTheme = isSystemInDarkTheme()) {
+            val preferences = (application as Ikev2VpnApplication).themePreferences
+            val darkModeOverride by preferences.darkModeOverride.collectAsStateWithLifecycle(initialValue = null)
+            val theme by preferences.theme.collectAsStateWithLifecycle(initialValue = AppTheme.BLUE)
+            Ikev2VpnTheme(darkTheme = darkModeOverride ?: isSystemInDarkTheme(), theme = theme) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     QrScanner(
                         onResult = { text ->

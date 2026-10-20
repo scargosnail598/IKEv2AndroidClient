@@ -11,6 +11,13 @@ Android application version.
 - Normalized the extracted Android project for standalone development and CI.
 - Expanded repository hygiene, release, testing, and security documentation.
 
+## [1.4.9]
+
+### Added
+
+- Three optional color/font themes: Terminal green, Amber console, and Rosewood,
+  with live previews, saved selection, and independent light/dark appearance.
+
 ## [1.4.8]
 
 ### Added

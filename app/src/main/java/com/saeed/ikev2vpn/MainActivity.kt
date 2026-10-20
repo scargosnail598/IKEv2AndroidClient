@@ -16,6 +16,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.saeed.ikev2vpn.data.AppTheme
 import com.saeed.ikev2vpn.ui.VpnApp
 import com.saeed.ikev2vpn.ui.VpnViewModel
 import com.saeed.ikev2vpn.ui.theme.Ikev2VpnTheme
@@ -71,6 +72,8 @@ class MainActivity : ComponentActivity() {
             val darkModeOverride by application.themePreferences.darkModeOverride
                 .collectAsStateWithLifecycle(initialValue = null)
             val darkTheme = darkModeOverride ?: isSystemInDarkTheme()
+            val theme by application.themePreferences.theme
+                .collectAsStateWithLifecycle(initialValue = AppTheme.BLUE)
             val coroutineScope = rememberCoroutineScope()
 
             SideEffect {
@@ -86,12 +89,16 @@ class MainActivity : ComponentActivity() {
                 )
             }
 
-            Ikev2VpnTheme(darkTheme = darkTheme) {
+            Ikev2VpnTheme(darkTheme = darkTheme, theme = theme) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     VpnApp(
                         viewModel = viewModel,
                         updateViewModel = updateViewModel,
                         darkMode = darkTheme,
+                        theme = theme,
+                        onThemeChanged = { selected ->
+                            coroutineScope.launch { application.themePreferences.setTheme(selected) }
+                        },
                         onConfigured = ::requestNotificationsOnce,
                         onNotificationSettings = ::openNotificationSettings,
                         onDarkModeChanged = { enabled ->

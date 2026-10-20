@@ -29,6 +29,7 @@ internal object VpnIcons {
     val File = icon("File", "M6 3 H14 L19 8 V21 H6 Z M14 3 V8 H19 M9 13 H16 M9 17 H14")
     val Photo = icon("Photo", "M3 4 H21 V20 H3 Z M3 17 L9 11 L14 16 L17 13 L21 17 M16 8 H16.1")
     val Moon = icon("Moon", "M20 15 A9 9 0 1 1 9 4 A7 7 0 0 0 20 15 Z")
+    val Palette = icon("Palette", "M12 3 A9 9 0 1 0 12 21 H14 A2 2 0 0 0 14 17 H13 A1.5 1.5 0 0 1 13 14 H17 A4 4 0 0 0 21 10 C21 6 17 3 12 3 M7 10 H7.1 M10 6.5 H10.1 M15 7 H15.1 M6.5 15 H6.6")
     val Activity = icon("Activity", "M2 12 H6 L9 4 L14 20 L17 12 H22")
     val Apps = icon("Apps", "M4 4 H10 V10 H4 Z M14 4 H20 V10 H14 Z M4 14 H10 V20 H4 Z M14 14 H20 V20 H14 Z")
     val Lock = icon("Lock", "M5 11 H19 V21 H5 Z M8 11 V7 A4 4 0 0 1 16 7 V11 M12 15 V17")

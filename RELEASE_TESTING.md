@@ -1,7 +1,7 @@
-# Android v1.4.8 Release Testing
+# Android v1.4.9 Release Testing
 
 Complete this checklist against the release candidate before creating
-`android-v1.4.8`. Record only observed results as `PASS`, `FAIL`, or `BLOCKED`;
+`android-v1.4.9`. Record only observed results as `PASS`, `FAIL`, or `BLOCKED`;
 this document is not evidence that any test has already passed.
 
 ## Device record matrix
@@ -47,6 +47,19 @@ review any exception.
       the correct public CA.
 - [ ] Deny VPN consent independently; confirm no provisioned state is retained
       and a later valid attempt succeeds.
+
+## Appearance
+
+- [ ] Upgrade with an existing light/dark preference; verify Classic blue and
+      the previous brightness remain selected until changed.
+- [ ] Open **Connection → More → Theme**, select each theme and verify the live
+      color/font preview. Dismiss with Done, Back and outside tap; the last
+      selection should persist after rotation and process restart.
+- [ ] Check all four themes in light and dark appearance across Connection,
+      Profiles, setup, app selection, Traffic bypass, About, Diagnostics,
+      sharing/password dialogs, and the QR scanner permission screen.
+- [ ] Check a narrow screen, landscape, large system text and long profile names
+      for clipping, readable buttons/fields/errors and scrollable theme choices.
 
 ## Connection and network behavior
 
@@ -175,7 +188,7 @@ Perform each case independently and restore the valid profile afterward:
 | APK checksum verified |  |  |
 | Signing key backup verified |  |  |
 
-Do not mark v1.4.8 ready while any required gate has failed or remains
+Do not mark v1.4.9 ready while any required gate has failed or remains
 unexplained. Attach only sanitized evidence and record device-specific quirks.
 
 ## Connection and profiles UX
@@ -223,7 +236,7 @@ unexplained. Attach only sanitized evidence and record device-specific quirks.
 
 ## About and in-app updater
 
-- [ ] About displays version 1.4.8 / code 14, the build type, source link, and update controls.
+- [ ] About displays version 1.4.9 / code 15, the build type, source link, and update controls.
 - [ ] Verify no-release, offline, GitHub rate-limit, already-current, and newer-release states.
 - [ ] Download a newer official release with the same signing key; verify progress,
       cancellation/retry, release notes, SHA-256, and no profile/credential changes.
@@ -473,3 +486,18 @@ Final local validation of 1.4.8 (14) also passed: 197 JVM tests (zero failures),
 native traffic-counter and TUN-update tests, Android lint and signed release build.
 The APK package/version and production signing certificate were verified, and
 the matching SHA-256 checksum was generated.
+
+### v1.4.9 publication record — 2026-10-20
+
+This release adds optional color/font themes while retaining Classic blue as the
+default. Version 1.4.9 increases versionCode from 14 to 15. Local checks passed:
+197 JVM tests (zero failures/errors/skips), native traffic-counter and TUN-update
+checks, Android lint, and the debug build. Each of the six new light/dark palettes passed
+17 primary text/accent contrast checks at a minimum of 4.5:1.
+
+The maintainer explicitly requested publication after being told that physical
+theme/UI and end-to-end update testing have not been performed. The device/API
+matrix and appearance checklist remain unverified; publication proceeds with
+this documented validation exception. No device-validation sign-off is claimed.
+GitHub Actions repeats the automated checks, signs with the existing official
+production key, and verifies the APK signature and checksum before publication.

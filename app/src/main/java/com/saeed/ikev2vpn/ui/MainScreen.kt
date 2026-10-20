@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.saeed.ikev2vpn.data.AppTheme
 import com.saeed.ikev2vpn.vpn.ConnectionState
 import com.saeed.ikev2vpn.vpn.ServerPingReading
 import kotlinx.coroutines.delay
@@ -28,8 +29,14 @@ fun MainScreen(
     onTrafficBypass: () -> Unit = {},
     serverPing: ServerPingReading = ServerPingReading.Inactive,
     onRefreshPing: () -> Unit = {},
+    theme: AppTheme = AppTheme.BLUE,
+    onThemeChanged: (AppTheme) -> Unit = {},
 ) {
     var menuOpen by remember { mutableStateOf(false) }
+    var themePickerOpen by remember { mutableStateOf(false) }
+    if (themePickerOpen) {
+        ThemePickerDialog(theme, darkMode, onThemeChanged, onDismiss = { themePickerOpen = false })
+    }
     val connected = state.connectionState == ConnectionState.CONNECTED && state.stateConfirmed
     val stopping = state.connectionState == ConnectionState.DISCONNECTING
     val working = state.connectionState == ConnectionState.CONNECTING
@@ -50,6 +57,8 @@ fun MainScreen(
                     DropdownMenuItem(text = { Text(if (darkMode) "Light appearance" else "Dark appearance") },
                         leadingIcon = { Icon(VpnIcons.Moon, null) },
                         onClick = { menuOpen = false; onDarkModeChanged(!darkMode) })
+                    DropdownMenuItem(text = { Text("Theme") }, leadingIcon = { Icon(VpnIcons.Palette, null) },
+                        onClick = { menuOpen = false; themePickerOpen = true })
                     DropdownMenuItem(text = { Text("Traffic bypass") }, leadingIcon = { Icon(VpnIcons.Link, null) },
                         onClick = { menuOpen = false; onTrafficBypass() })
                     DropdownMenuItem(text = { Text("Notifications") }, leadingIcon = { Icon(VpnIcons.Bell, null) },

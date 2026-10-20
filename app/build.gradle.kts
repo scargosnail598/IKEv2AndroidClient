@@ -85,8 +85,8 @@ android {
         applicationId = "com.saeed.ikev2vpn"
         minSdk = 30
         targetSdk = 36
-        versionCode = 14
-        versionName = "1.4.8"
+        versionCode = 15
+        versionName = "1.4.9"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

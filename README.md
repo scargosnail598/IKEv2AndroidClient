@@ -5,7 +5,7 @@ and the strongSwan userland VPN engine.
 
 ## Status and version
 
-The current application version is **1.4.8** (`versionCode = 14`). The Gradle
+The current application version is **1.4.9** (`versionCode = 15`). The Gradle
 configuration in `app/build.gradle.kts` is the version source of truth.
 
 The repository is maintained as an independent Android project. Release-device
@@ -304,6 +304,18 @@ that blocks ICMP, an unavailable ping utility, or a timeout displays **Unavailab
 that result alone does not mean the VPN is disconnected. No third-party test host
 or additional permission is used.
 
+## Appearance
+
+Open **Connection → More → Theme** to preview and select **Classic blue**,
+**Terminal green**, **Amber console**, or **Rosewood**. Terminal green and Amber
+console use the system monospace font; Rosewood pairs serif headings with a
+sans-serif body. Classic blue keeps the original appearance. No font download
+is required.
+
+The choice is saved across relaunches and applies to all app screens, including
+the QR scanner. **More → Light/Dark appearance** still controls brightness
+independently. Themes keep the existing layout, text sizes, spacing and shapes.
+
 ## Notification controls
 
 After saving a VPN profile, the app requests notification permission once on
@@ -390,15 +402,15 @@ read -rsp "Key password: " ANDROID_KEY_PASSWORD; export ANDROID_KEY_PASSWORD; pr
 An explicit release task fails when any signing value is missing. Debug builds,
 tests, and lint do not read or require signing credentials.
 
-After completing [RELEASE_TESTING.md](RELEASE_TESTING.md), build v1.4.8 with:
+After completing [RELEASE_TESTING.md](RELEASE_TESTING.md), build v1.4.9 with:
 
 ```bash
 ./gradlew --no-daemon --no-configuration-cache clean assembleRelease
 mkdir -p dist
-cp app/build/outputs/apk/release/app-release.apk dist/ikev2-android-v1.4.8.apk
-apksigner verify --verbose --print-certs dist/ikev2-android-v1.4.8.apk
-(cd dist && sha256sum ikev2-android-v1.4.8.apk > ikev2-android-v1.4.8.apk.sha256)
-(cd dist && sha256sum -c ikev2-android-v1.4.8.apk.sha256)
+cp app/build/outputs/apk/release/app-release.apk dist/ikev2-android-v1.4.9.apk
+apksigner verify --verbose --print-certs dist/ikev2-android-v1.4.9.apk
+(cd dist && sha256sum ikev2-android-v1.4.9.apk > ikev2-android-v1.4.9.apk.sha256)
+(cd dist && sha256sum -c ikev2-android-v1.4.9.apk.sha256)
 unset ANDROID_KEYSTORE_PATH ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD
 ```
 
@@ -410,7 +422,7 @@ for every update.
 
 `dist/` is ignored. After the signed release candidate passes the manual device
 checklist, run **Tag Android Release** from the Actions tab on `main`, enter
-`1.4.8`, and confirm device validation. The workflow checks that the requested
+`1.4.9`, and confirm device validation. The workflow checks that the requested
 version matches Gradle, runs unsigned CI validation, creates the annotated tag,
 and starts **Android Release** to build and publish the signed APK and checksum.
 The Android Release workflow can also be started manually for an existing tag.

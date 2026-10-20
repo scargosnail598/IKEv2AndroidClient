@@ -25,6 +25,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.saeed.ikev2vpn.data.AppTheme
 
 @Composable
 fun VpnApp(
@@ -34,6 +35,8 @@ fun VpnApp(
     onDarkModeChanged: (Boolean) -> Unit,
     onConfigured: () -> Unit = {},
     onNotificationSettings: () -> Unit = {},
+    theme: AppTheme = AppTheme.BLUE,
+    onThemeChanged: (AppTheme) -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val serverPing by viewModel.serverPing.collectAsStateWithLifecycle()
@@ -168,6 +171,7 @@ fun VpnApp(
                     onConnect = viewModel::connect, onDisconnect = viewModel::disconnect,
                     onDiagnostics = viewModel::showDiagnostics, darkMode = darkMode,
                     onDarkModeChanged = onDarkModeChanged, onDismissError = viewModel::dismissError,
+                    theme = theme, onThemeChanged = onThemeChanged,
                     onAbout = viewModel::showAbout,
                     onNotificationSettings = onNotificationSettings,
                     onTrafficBypass = viewModel::showTrafficBypass,
