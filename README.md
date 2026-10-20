@@ -5,7 +5,7 @@ and the strongSwan userland VPN engine.
 
 ## Status and version
 
-The current application version is **1.4.6** (`versionCode = 12`). The Gradle
+The current application version is **1.4.7** (`versionCode = 13`). The Gradle
 configuration in `app/build.gradle.kts` is the version source of truth.
 
 The repository is maintained as an independent Android project. Release-device
@@ -175,10 +175,11 @@ The interoperability contract and frozen test fixtures follow server commit
 
 The app has two main tabs:
 
-- **Connection** shows the selected profile, a single Connect/Disconnect button,
-  and the current session. A confirmed tunnel shows elapsed time, connection
-  time, account, and app routing. Expand **More details** for the server,
-  session ID, and certificate trust. Session timing starts when strongSwan
+- **Connection** shows the selected profile and a single Connect/Disconnect
+  button. Account, app routing, and the confirmed connection's start time appear
+  as a compact summary beneath the selected profile; elapsed time stays under
+  connection status. Technical details are available in **More → Diagnostics**.
+  Session timing starts when strongSwan
   reports a connected tunnel; previous session IDs and timing are cleared when
   disconnected. The **VPN traffic** card below the connection button shows
   download (In) and upload (Out) totals for the current session, sampled once
@@ -388,15 +389,15 @@ read -rsp "Key password: " ANDROID_KEY_PASSWORD; export ANDROID_KEY_PASSWORD; pr
 An explicit release task fails when any signing value is missing. Debug builds,
 tests, and lint do not read or require signing credentials.
 
-After completing [RELEASE_TESTING.md](RELEASE_TESTING.md), build v1.4.6 with:
+After completing [RELEASE_TESTING.md](RELEASE_TESTING.md), build v1.4.7 with:
 
 ```bash
 ./gradlew --no-daemon --no-configuration-cache clean assembleRelease
 mkdir -p dist
-cp app/build/outputs/apk/release/app-release.apk dist/ikev2-android-v1.4.6.apk
-apksigner verify --verbose --print-certs dist/ikev2-android-v1.4.6.apk
-(cd dist && sha256sum ikev2-android-v1.4.6.apk > ikev2-android-v1.4.6.apk.sha256)
-(cd dist && sha256sum -c ikev2-android-v1.4.6.apk.sha256)
+cp app/build/outputs/apk/release/app-release.apk dist/ikev2-android-v1.4.7.apk
+apksigner verify --verbose --print-certs dist/ikev2-android-v1.4.7.apk
+(cd dist && sha256sum ikev2-android-v1.4.7.apk > ikev2-android-v1.4.7.apk.sha256)
+(cd dist && sha256sum -c ikev2-android-v1.4.7.apk.sha256)
 unset ANDROID_KEYSTORE_PATH ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD
 ```
 
@@ -408,7 +409,7 @@ for every update.
 
 `dist/` is ignored. After the signed release candidate passes the manual device
 checklist, run **Tag Android Release** from the Actions tab on `main`, enter
-`1.4.6`, and confirm device validation. The workflow checks that the requested
+`1.4.7`, and confirm device validation. The workflow checks that the requested
 version matches Gradle, runs unsigned CI validation, creates the annotated tag,
 and starts **Android Release** to build and publish the signed APK and checksum.
 The Android Release workflow can also be started manually for an existing tag.

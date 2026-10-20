@@ -11,6 +11,13 @@ Android application version.
 - Normalized the extracted Android project for standalone development and CI.
 - Expanded repository hygiene, release, testing, and security documentation.
 
+## [1.4.7]
+
+### Changed
+
+- Simplified the Connection screen by replacing the separate session card with
+  a compact account, routing and connection-start summary beneath Selected profile.
+
 ## [1.4.6]
 
 ### Added

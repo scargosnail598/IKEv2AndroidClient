@@ -1,7 +1,7 @@
-# Android v1.4.6 Release Testing
+# Android v1.4.7 Release Testing
 
 Complete this checklist against the release candidate before creating
-`android-v1.4.6`. Record only observed results as `PASS`, `FAIL`, or `BLOCKED`;
+`android-v1.4.7`. Record only observed results as `PASS`, `FAIL`, or `BLOCKED`;
 this document is not evidence that any test has already passed.
 
 ## Device record matrix
@@ -175,7 +175,7 @@ Perform each case independently and restore the valid profile afterward:
 | APK checksum verified |  |  |
 | Signing key backup verified |  |  |
 
-Do not mark v1.4.6 ready while any required gate has failed or remains
+Do not mark v1.4.7 ready while any required gate has failed or remains
 unexplained. Attach only sanitized evidence and record device-specific quirks.
 
 ## Connection and profiles UX
@@ -183,6 +183,11 @@ unexplained. Attach only sanitized evidence and record device-specific quirks.
 - [ ] Check both tabs in light/dark mode, portrait/landscape, at 320dp width and
       enlarged system font. Keep names readable, actions reachable, and the
       editor save button above the keyboard.
+- [ ] Confirm Connection has no separate Current session/Profile details card.
+      Account, routing and confirmed connection start time appear below the
+      selected profile; disconnected/unconfirmed states show no previous start
+      time. Keep the compact summary readable at 320dp with enlarged fonts and
+      verify More → Diagnostics remains reachable.
 - [ ] Start with no profiles. Add through all four import methods and manual
       setup, cancel, and confirm that no configuration is saved before Save.
 - [ ] Browse profiles during an active tunnel. Mutations must stay disabled;
@@ -218,7 +223,7 @@ unexplained. Attach only sanitized evidence and record device-specific quirks.
 
 ## About and in-app updater
 
-- [ ] About displays version 1.4.6 / code 12, the build type, source link, and update controls.
+- [ ] About displays version 1.4.7 / code 13, the build type, source link, and update controls.
 - [ ] Verify no-release, offline, GitHub rate-limit, already-current, and newer-release states.
 - [ ] Download a newer official release with the same signing key; verify progress,
       cancellation/retry, release notes, SHA-256, and no profile/credential changes.
@@ -380,3 +385,31 @@ increases versionCode from 11 to 12. Local production-signed build, APK signatur
 passed. The signing certificate SHA-256 matches official v1.4.5:
 `9dd62e924ae88a07c49e180173469b70d90efad5235172fe0c4f33d27cd453eb`.
 The publication workflow repeats automated validation and publishes the signed artifacts.
+
+
+## v1.4.7 compact Connection screen
+
+- [ ] Verify the separate Current session/Profile details card is absent in
+      connected, disconnected and unconfirmed states.
+- [ ] Verify account, app routing and the confirmed connection start time appear
+      as a summary below Selected profile. Disconnect/reconnect and confirm no
+      previous connection start time remains visible.
+- [ ] Check 320dp width, enlarged fonts, long account/profile names and both themes.
+      Keep Connect/Disconnect, traffic, ping and More → Diagnostics accessible.
+- [ ] Upgrade official v1.4.6 to v1.4.7 (code 13) in place and verify saved profiles,
+      credentials, app routing and theme remain available.
+
+### v1.4.7 publication record — 2026-10-20
+
+The maintainer requested publication for an in-app update. Physical-device UI
+interaction, in-place installation and the API 30–32 / API 33+ device matrix
+remain unverified in this environment. Publication proceeds with this documented
+exception and does not mark device checks as passed. The release retains the
+production signing key and increases versionCode from 12 to 13. Automated
+validation, signature and checksum results are recorded in the release notes
+and the publication workflow.
+
+Local validation passed: 167 JVM tests, native traffic-counter checks, Android
+lint and the production-signed release build. APK checksum verification passed,
+and its signing certificate matches official v1.4.6:
+`9dd62e924ae88a07c49e180173469b70d90efad5235172fe0c4f33d27cd453eb`.

@@ -98,6 +98,21 @@ fun MainScreen(
                         Text(profile.config.profileName, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         Text(profile.config.serverAddress, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            buildString {
+                                append(profile.config.username)
+                                append(" · ")
+                                append(profile.config.appRouting.summary())
+                                if (connected) state.connectedSinceMillis?.let {
+                                    append(" · Since ")
+                                    append(DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(it)))
+                                }
+                            },
+                            modifier = Modifier.padding(top = 4.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2, overflow = TextOverflow.Ellipsis,
+                        )
                     }
                     Icon(VpnIcons.Chevron, "Manage profiles", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
@@ -129,40 +144,10 @@ fun MainScreen(
         if (state.configured) TrafficCard(state.traffic.takeIf { connected }, connected, state.serverAddress,
             state.appRouting, serverPing.takeIf { connected } ?: ServerPingReading.Inactive, onRefreshPing)
         state.error?.let { ErrorCard(it, onDismissError) }
-        if (state.configured) SessionCard(state, onDiagnostics)
         if (state.provisioningStatus == com.saeed.ikev2vpn.data.ProvisioningStatus.PENDING_CONSENT) {
             Text("Finish the Android VPN permission request before connecting.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Spacer(Modifier.height(8.dp))
-    }
-}
-
-@Composable
-private fun SessionCard(state: VpnUiState, onDiagnostics: () -> Unit) {
-    val connected = state.connectionState == ConnectionState.CONNECTED && state.stateConfirmed
-    var details by remember { mutableStateOf(false) }
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(if (connected) "Current session" else "Profile details", style = MaterialTheme.typography.titleMedium)
-            }
-            DetailRow("Account", state.username)
-            DetailRow("App routing", state.appRouting.summary())
-            if (connected) {
-                state.connectedSinceMillis?.let { DetailRow("Connected at", DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(it))) }
-            } else Text("No active session.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            TextButton(onClick = { details = !details }, contentPadding = PaddingValues(0.dp)) {
-                Text(if (details) "Hide details" else "More details")
-            }
-            if (details) {
-                HorizontalDivider()
-                DetailRow("Server", state.serverAddress)
-                DetailRow("Status", state.connectionState.displayName())
-                if (connected) DetailRow("Session ID", state.sessionId ?: "Unavailable")
-                DetailRow("Certificate", if (state.usesPublicCertificateTrust) "Public certificate authorities" else "Private CA")
-                TextButton(onClick = onDiagnostics, contentPadding = PaddingValues(0.dp)) { Text("Open diagnostics") }
-            }
-        }
     }
 }
 

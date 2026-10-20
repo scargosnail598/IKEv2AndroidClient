@@ -41,6 +41,13 @@ private fun SessionPreview() {
     PreviewFrame(true) { MainScreen(state, {}, {}, {}, {}, {}, true, {}, {}) }
 }
 
+@Preview(name = "Connection · compact large text", widthDp = 320, heightDp = 640, fontScale = 1.3f, showBackground = true)
+@Composable
+private fun CompactConnectionPreview() {
+    val state = remember { sampleState(true) }
+    PreviewFrame { MainScreen(state, {}, {}, {}, {}, {}, false, {}, {}) }
+}
+
 @Preview(name = "Profiles", widthDp = 360, heightDp = 780, showBackground = true)
 @Composable
 private fun ProfilesPreview() {
