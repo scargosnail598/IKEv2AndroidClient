@@ -67,6 +67,58 @@ class VpnViewModelTest {
     }
 
     @Test
+    fun `sharing without password does not read credentials or mutate the active connection`() = runTest {
+        val first = provisionedSnapshot(testCertificate()).profile!!
+        val second = first.copy(config = first.config.copy(id = "second", username = "second-user"))
+        val repository = FakeProfileRepository(RepositorySnapshot(profile = first, profiles = listOf(first, second)))
+        val controller = FakeVpnController(VpnState(connectionState = ConnectionState.CONNECTED, confirmed = true))
+        val viewModel = createViewModel(repository, controller)
+
+        val imported = shareDecoder().decode(viewModel.createProfileShareLink("second", false))
+
+        assertEquals("second-user", imported.profile.config.username)
+        assertEquals(null, imported.password)
+        assertTrue(controller.credentialReadIds.isEmpty())
+        assertEquals(first, repository.current.profile)
+        assertEquals(0, controller.provisionCalls)
+        assertEquals(ConnectionState.CONNECTED, viewModel.uiState.value.connectionState)
+    }
+
+    @Test
+    fun `sharing with password reads only the requested profile credential`() = runTest {
+        val first = provisionedSnapshot(testCertificate()).profile!!
+        val second = first.copy(config = first.config.copy(id = "second", username = "second-user"))
+        val repository = FakeProfileRepository(RepositorySnapshot(profile = first, profiles = listOf(first, second)))
+        val controller = FakeVpnController().apply {
+            sharePasswords[first.config.id] = "first-password"
+            sharePasswords["second"] = "second-password"
+        }
+        val viewModel = createViewModel(repository, controller)
+
+        val imported = shareDecoder().decode(viewModel.createProfileShareLink("second", true))
+
+        assertEquals("second-password", imported.password)
+        assertEquals(listOf("second"), controller.credentialReadIds)
+        assertFalse(viewModel.uiState.value.toString().contains("second-password"))
+        assertEquals(first, repository.current.profile)
+        assertEquals(0, controller.provisionCalls)
+    }
+
+    @Test
+    fun `sharing rejects missing profiles and missing passwords without falling back to another credential`() = runTest {
+        val repository = FakeProfileRepository(provisionedSnapshot(testCertificate()))
+        val controller = FakeVpnController()
+        val viewModel = createViewModel(repository, controller)
+        for ((id, includePassword) in listOf("missing" to false, "legacy" to true)) {
+            try {
+                viewModel.createProfileShareLink(id, includePassword)
+                org.junit.Assert.fail("Expected share to be rejected")
+            } catch (_: com.saeed.ikev2vpn.profile.IkevProfileShareException) { }
+        }
+        assertEquals(listOf("legacy"), controller.credentialReadIds)
+    }
+
+    @Test
     fun `canceling edit restores the committed profile`() = runTest {
         val certificate = testCertificate()
         val repository = FakeProfileRepository(provisionedSnapshot(certificate))
@@ -839,6 +891,12 @@ class VpnViewModelTest {
         var deleteCalls = 0
         var provisionCalls = 0
         var provisionedPassword: String? = null
+        val sharePasswords = mutableMapOf<String, String>()
+        val credentialReadIds = mutableListOf<String>()
+        override fun loadProfileCredential(profileId: String): String? {
+            credentialReadIds += profileId
+            return sharePasswords[profileId]
+        }
         var savedCredentialAvailable = true
         var restoreFails = false
         var restoredProfile: VpnProfileConfig? = null

@@ -14,7 +14,8 @@ import com.saeed.ikev2vpn.validation.ProfileValidator
 
 @Composable
 internal fun ProfilesScreen(state: VpnUiState, onSelect: (String) -> Unit, onAdd: () -> Unit,
-    onEdit: (String) -> Unit, onRename: (String, String) -> Unit, onDelete: (String) -> Unit, onDismissError: () -> Unit) {
+    onEdit: (String) -> Unit, onRename: (String, String) -> Unit, onDelete: (String) -> Unit, onDismissError: () -> Unit,
+    onShare: (StoredProfile) -> Unit = {}) {
     var rename by remember { mutableStateOf<StoredProfile?>(null) }
     var remove by remember { mutableStateOf<StoredProfile?>(null) }
     val editable = state.canManageProfiles
@@ -54,14 +55,18 @@ internal fun ProfilesScreen(state: VpnUiState, onSelect: (String) -> Unit, onAdd
                                 maxLines = 2, overflow = TextOverflow.Ellipsis)
                         }
                         Box {
-                            IconButton(onClick = { menu = true }, enabled = editable) { Icon(VpnIcons.More, "Actions for ${profile.config.profileName}") }
+                            IconButton(onClick = { menu = true }) { Icon(VpnIcons.More, "Actions for ${profile.config.profileName}") }
                             DropdownMenu(menu, onDismissRequest = { menu = false }) {
-                                DropdownMenuItem(text = { Text("Rename") }, leadingIcon = { Icon(VpnIcons.Edit, null) },
+                                DropdownMenuItem(text = { Text("Share link / QR") }, leadingIcon = { Icon(VpnIcons.Qr, null) },
+                                    enabled = !state.isBusy,
+                                    onClick = { menu = false; onShare(profile) })
+                                HorizontalDivider()
+                                DropdownMenuItem(enabled = editable, text = { Text("Rename") }, leadingIcon = { Icon(VpnIcons.Edit, null) },
                                     onClick = { menu = false; rename = profile })
-                                DropdownMenuItem(text = { Text("Edit configuration") }, leadingIcon = { Icon(VpnIcons.File, null) },
+                                DropdownMenuItem(enabled = editable, text = { Text("Edit configuration") }, leadingIcon = { Icon(VpnIcons.File, null) },
                                     onClick = { menu = false; onEdit(profile.config.id) })
                                 HorizontalDivider()
-                                DropdownMenuItem(text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                                DropdownMenuItem(enabled = editable, text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
                                     leadingIcon = { Icon(VpnIcons.Trash, null, tint = MaterialTheme.colorScheme.error) },
                                     onClick = { menu = false; remove = profile })
                             }

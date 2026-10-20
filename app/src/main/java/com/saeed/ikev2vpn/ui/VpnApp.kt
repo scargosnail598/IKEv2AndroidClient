@@ -57,6 +57,10 @@ fun VpnApp(
     }
     val context = LocalContext.current
     var linkDialogOpen by remember { mutableStateOf(false) }
+    var shareProfile by remember { mutableStateOf<com.saeed.ikev2vpn.data.StoredProfile?>(null) }
+    shareProfile?.let { profile ->
+        ProfileShareDialog(profile, viewModel::createProfileShareLink, onDismiss = { shareProfile = null })
+    }
     val qrImagePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let(viewModel::importQrImage)
     }
@@ -100,7 +104,10 @@ fun VpnApp(
     DisposableEffect(lifecycleOwner, viewModel) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) viewModel.refreshState()
-            if (event == Lifecycle.Event.ON_STOP) linkDialogOpen = false
+            if (event == Lifecycle.Event.ON_STOP) {
+                linkDialogOpen = false
+                shareProfile = null
+            }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
@@ -169,6 +176,7 @@ fun VpnApp(
                 AppScreen.PROFILES -> ProfilesScreen(
                     state, viewModel::selectProfile, viewModel::addProfile, viewModel::editProfile,
                     viewModel::renameProfile, viewModel::deleteProfile, viewModel::dismissError,
+                    onShare = { shareProfile = it },
                 )
                 AppScreen.ABOUT -> AboutScreen(updateState, viewModel::showMain,
                     updateViewModel::check, updateViewModel::download, updateViewModel::cancelDownload,

@@ -1,7 +1,7 @@
-# Android v1.4.5 Release Testing
+# Android v1.4.6 Release Testing
 
 Complete this checklist against the release candidate before creating
-`android-v1.4.5`. Record only observed results as `PASS`, `FAIL`, or `BLOCKED`;
+`android-v1.4.6`. Record only observed results as `PASS`, `FAIL`, or `BLOCKED`;
 this document is not evidence that any test has already passed.
 
 ## Device record matrix
@@ -175,7 +175,7 @@ Perform each case independently and restore the valid profile afterward:
 | APK checksum verified |  |  |
 | Signing key backup verified |  |  |
 
-Do not mark v1.4.5 ready while any required gate has failed or remains
+Do not mark v1.4.6 ready while any required gate has failed or remains
 unexplained. Attach only sanitized evidence and record device-specific quirks.
 
 ## Connection and profiles UX
@@ -218,7 +218,7 @@ unexplained. Attach only sanitized evidence and record device-specific quirks.
 
 ## About and in-app updater
 
-- [ ] About displays version 1.4.5 / code 11, the build type, source link, and update controls.
+- [ ] About displays version 1.4.6 / code 12, the build type, source link, and update controls.
 - [ ] Verify no-release, offline, GitHub rate-limit, already-current, and newer-release states.
 - [ ] Download a newer official release with the same signing key; verify progress,
       cancellation/retry, release notes, SHA-256, and no profile/credential changes.
@@ -346,3 +346,37 @@ UI interaction, installation and the API 30–32 / API 33+ device matrix remain
 unverified in this environment. Publication proceeds with that documented
 exception and does not mark those device checks as passed. The existing
 production signing key is retained.
+
+
+## v1.4.6 configuration sharing
+
+- [ ] On private-CA and public-trust profiles, open Profiles → ⋯ → Share link / QR.
+      Scan with a second device and import the shared PNG through Choose a QR image.
+      Verify server, username, profile name, CA fingerprint/trust and successful setup.
+- [ ] Copy/paste and share the link through another app; test both optional-password
+      states. Without a password the recipient must enter one; with a password
+      leave the password field empty and verify it is used after explicit Save.
+- [ ] Share selected and inactive profiles while connected. Verify the correct
+      profile/credential is exported and the active VPN remains unchanged.
+- [ ] Toggle Include saved password repeatedly. Never show or share the previous
+      QR/link while regenerating. Missing credentials and oversized configurations
+      must show a useful error; disabling the option must permit retry.
+- [ ] Verify light/dark mode, 320dp width, large fonts, TalkBack, scrolling, rotation,
+      background/resume, share cancellation, and absence of a receiving app.
+      Backgrounding/rotation must close the dialog and reset password inclusion.
+- [ ] Confirm sharing remains local, no network request or camera permission is
+      needed, and per-app routing remains on the source device.
+
+
+### v1.4.6 publication record — 2026-10-20
+
+The maintainer requested an official release to update through the app after
+167 JVM tests, native traffic-counter checks, Android lint and the debug build
+passed. Physical-device QR scanning/sharing, UI interaction, in-place installation
+and the API 30–32 / API 33+ device matrix remain unverified in this environment.
+Publication proceeds with this documented exception and does not mark the device
+checks as passed. The release retains the existing production signing key and
+increases versionCode from 11 to 12. Local production-signed build, APK signature verification and checksum verification
+passed. The signing certificate SHA-256 matches official v1.4.5:
+`9dd62e924ae88a07c49e180173469b70d90efad5235172fe0c4f33d27cd453eb`.
+The publication workflow repeats automated validation and publishes the signed artifacts.

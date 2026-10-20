@@ -11,6 +11,13 @@ Android application version.
 - Normalized the extracted Android project for standalone development and CI.
 - Expanded repository hygiene, release, testing, and security documentation.
 
+## [1.4.6]
+
+### Added
+
+- Share saved VPN configurations as offline links or QR images from Profiles.
+- Optional password inclusion and private/public CA trust in shared configurations.
+
 ## [1.3.1]
 
 ### Fixed

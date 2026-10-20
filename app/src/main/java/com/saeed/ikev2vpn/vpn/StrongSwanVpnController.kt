@@ -88,6 +88,9 @@ class StrongSwanVpnController(context: Context) : VpnPlatformController {
 
     override fun hasSavedCredential(profileId: String): Boolean = credentialStore.load(profileId) != null
 
+    override fun loadProfileCredential(profileId: String): String? =
+        credentialStore.load(profileId)
+
     override fun restoreProfile(config: VpnProfileConfig, serverRootCa: X509Certificate?): VpnResult<ProvisioningAction> {
         return try {
             val password = credentialStore.load(config.id)

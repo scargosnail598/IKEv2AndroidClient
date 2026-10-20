@@ -5,7 +5,7 @@ and the strongSwan userland VPN engine.
 
 ## Status and version
 
-The current application version is **1.4.5** (`versionCode = 11`). The Gradle
+The current application version is **1.4.6** (`versionCode = 12`). The Gradle
 configuration in `app/build.gradle.kts` is the version source of truth.
 
 The repository is maintained as an independent Android project. Release-device
@@ -30,7 +30,8 @@ IKEv2 server
 - Authentication uses IKEv2 with EAP-MSCHAPv2 and a private CA.
 - The EAP password is encrypted with an app-specific, non-exportable Android
   Keystore key when the profile is saved. It is decrypted only when starting
-  the strongSwan service and is not stored in the strongSwan profile database.
+  the strongSwan service, restoring a profile, or explicitly sharing its password.
+  It is not stored in the strongSwan profile database.
 - Diagnostics intentionally contain no VPN password.
 
 ## Requirements
@@ -54,6 +55,7 @@ the pinned Gradle 9.5 wrapper.
 - Connect, disconnect, reconnect, and strongSwan-confirmed status
 - Private CA import from DER or PEM
 - Portable `.ikev` schema version 1 import with private or public CA trust
+- Offline configuration link and QR import/export, with an optional shared password
 - Manual profile configuration
 - Sanitized diagnostics
 - Persistent light/dark theme selection
@@ -61,8 +63,8 @@ the pinned Gradle 9.5 wrapper.
 
 ## Current limitations
 
-The app does not currently support IPv6 literals, QR
-provisioning, SOCKS5 Proxy Mode, custom DNS or
+The app does not currently support IPv6 literals,
+SOCKS5 Proxy Mode, custom DNS or
 routing, Quick Settings, or auto-connect UI.
 
 Connection state and protocol logs come from the strongSwan service and its
@@ -94,6 +96,29 @@ the user selects **Save profile**.
 The strongSwan engine accepts a separate server Remote ID. Imported profile
 metadata the UI does not configure, including SOCKS5 Proxy Mode, remains
 informational only.
+
+## Share a configuration link or QR
+
+Open **Profiles → ⋯ → Share link / QR** on a saved profile. Scan the displayed
+QR with another device, choose **Copy link** or **Share link**, or send a PNG with
+**Share QR image**. Sharing also works while connected and does not switch profiles.
+The output uses the existing offline `ikev://import/v1/` transport, including the
+private CA certificate and fingerprint or public certificate trust.
+
+**Include saved password** is off by default. Enable it only when the recipient
+should receive your VPN credential: compression and Base64 do not encrypt it.
+If a password is unavailable, share without it or save the profile again.
+Generated links remain in memory while the dialog is open; the dialog closes on
+backgrounding or rotation. QR images sent through Android's share sheet use a
+private cache directory with temporary read access; files older than 24 hours
+are removed on the next image share. Copied links and recipient copies remain
+outside the app's control.
+
+App routing and local profile IDs stay on this device; imports start with
+**All apps**. Informational server/proxy metadata is not retained in saved
+connections. The v1 format limits usernames to 64 letters, digits, or `. _ @ + -`
+characters, links to 2953 ASCII bytes, and decompressed JSON to 64 KiB.
+Configurations exceeding these bounds show an error instead of an unusable QR.
 
 ## Import a configuration link or QR
 
@@ -363,15 +388,15 @@ read -rsp "Key password: " ANDROID_KEY_PASSWORD; export ANDROID_KEY_PASSWORD; pr
 An explicit release task fails when any signing value is missing. Debug builds,
 tests, and lint do not read or require signing credentials.
 
-After completing [RELEASE_TESTING.md](RELEASE_TESTING.md), build v1.4.5 with:
+After completing [RELEASE_TESTING.md](RELEASE_TESTING.md), build v1.4.6 with:
 
 ```bash
 ./gradlew --no-daemon --no-configuration-cache clean assembleRelease
 mkdir -p dist
-cp app/build/outputs/apk/release/app-release.apk dist/ikev2-android-v1.4.5.apk
-apksigner verify --verbose --print-certs dist/ikev2-android-v1.4.5.apk
-(cd dist && sha256sum ikev2-android-v1.4.5.apk > ikev2-android-v1.4.5.apk.sha256)
-(cd dist && sha256sum -c ikev2-android-v1.4.5.apk.sha256)
+cp app/build/outputs/apk/release/app-release.apk dist/ikev2-android-v1.4.6.apk
+apksigner verify --verbose --print-certs dist/ikev2-android-v1.4.6.apk
+(cd dist && sha256sum ikev2-android-v1.4.6.apk > ikev2-android-v1.4.6.apk.sha256)
+(cd dist && sha256sum -c ikev2-android-v1.4.6.apk.sha256)
 unset ANDROID_KEYSTORE_PATH ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD
 ```
 
@@ -383,7 +408,7 @@ for every update.
 
 `dist/` is ignored. After the signed release candidate passes the manual device
 checklist, run **Tag Android Release** from the Actions tab on `main`, enter
-`1.4.5`, and confirm device validation. The workflow checks that the requested
+`1.4.6`, and confirm device validation. The workflow checks that the requested
 version matches Gradle, runs unsigned CI validation, creates the annotated tag,
 and starts **Android Release** to build and publish the signed APK and checksum.
 The Android Release workflow can also be started manually for an existing tag.

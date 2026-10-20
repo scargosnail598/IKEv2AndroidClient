@@ -15,6 +15,8 @@ import com.saeed.ikev2vpn.data.VpnProfileConfig
 import com.saeed.ikev2vpn.data.AppRoutingConfig
 import com.saeed.ikev2vpn.data.AppRoutingMode
 import com.saeed.ikev2vpn.diagnostics.DiagnosticSanitizer
+import com.saeed.ikev2vpn.profile.IkevProfileShareException
+import com.saeed.ikev2vpn.profile.IkevShareEncoder
 import com.saeed.ikev2vpn.profile.IkevProfileImportException
 import com.saeed.ikev2vpn.profile.IkevProfileImporter
 import com.saeed.ikev2vpn.profile.ImportedProxyMetadata
@@ -31,6 +33,7 @@ import com.saeed.ikev2vpn.vpn.StateEvidence
 import com.saeed.ikev2vpn.vpn.VpnPlatformController
 import com.saeed.ikev2vpn.vpn.VpnResult
 import com.saeed.ikev2vpn.vpn.currentTraffic
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.Channel
@@ -457,6 +460,29 @@ class VpnViewModel(
                 showError(result.userMessage, result.technicalMessage)
                 recordError(result.userMessage, result.technicalMessage)
             }
+        }
+    }
+
+    /** The result contains credentials only on explicit request and never enters VpnUiState. */
+    suspend fun createProfileShareLink(id: String, includePassword: Boolean): String {
+        val profile = latestSnapshot.profiles.firstOrNull { it.config.id == id }
+            ?: latestSnapshot.profile?.takeIf { it.config.id == id }
+            ?: throw IkevProfileShareException("This profile is no longer available.")
+        val password = if (includePassword) {
+            withContext(Dispatchers.IO) {
+                try {
+                    vpnController.loadProfileCredential(id)
+                } catch (_: Exception) {
+                    throw IkevProfileShareException(
+                        "The saved password could not be read. Share without a password or save the profile again.",
+                    )
+                }
+            } ?: throw IkevProfileShareException(
+                "This profile has no saved password. Share without a password or save the profile again.",
+            )
+        } else null
+        return withContext(Dispatchers.Default) {
+            IkevShareEncoder.encode(profile, password)
         }
     }
 

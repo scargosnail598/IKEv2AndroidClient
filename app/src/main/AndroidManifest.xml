@@ -60,6 +60,15 @@
                 android:resource="@xml/update_file_paths" />
         </provider>
 
+        <provider
+            android:name="com.saeed.ikev2vpn.profile.ProfileShareFileProvider"
+            android:authorities="${applicationId}.profile-shares"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/profile_share_file_paths" />
+        </provider>
+
         <activity
             android:name="com.saeed.ikev2vpn.MainActivity"
             android:launchMode="singleTop"
