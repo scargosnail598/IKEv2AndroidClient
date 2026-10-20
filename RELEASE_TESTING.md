@@ -1,7 +1,7 @@
-# Android v1.4.7 Release Testing
+# Android v1.4.8 Release Testing
 
 Complete this checklist against the release candidate before creating
-`android-v1.4.7`. Record only observed results as `PASS`, `FAIL`, or `BLOCKED`;
+`android-v1.4.8`. Record only observed results as `PASS`, `FAIL`, or `BLOCKED`;
 this document is not evidence that any test has already passed.
 
 ## Device record matrix
@@ -175,7 +175,7 @@ Perform each case independently and restore the valid profile afterward:
 | APK checksum verified |  |  |
 | Signing key backup verified |  |  |
 
-Do not mark v1.4.7 ready while any required gate has failed or remains
+Do not mark v1.4.8 ready while any required gate has failed or remains
 unexplained. Attach only sanitized evidence and record device-specific quirks.
 
 ## Connection and profiles UX
@@ -223,7 +223,7 @@ unexplained. Attach only sanitized evidence and record device-specific quirks.
 
 ## About and in-app updater
 
-- [ ] About displays version 1.4.7 / code 13, the build type, source link, and update controls.
+- [ ] About displays version 1.4.8 / code 14, the build type, source link, and update controls.
 - [ ] Verify no-release, offline, GitHub rate-limit, already-current, and newer-release states.
 - [ ] Download a newer official release with the same signing key; verify progress,
       cancellation/retry, release notes, SHA-256, and no profile/credential changes.
@@ -413,3 +413,63 @@ Local validation passed: 167 JVM tests, native traffic-counter checks, Android
 lint and the production-signed release build. APK checksum verification passed,
 and its signing certificate matches official v1.4.6:
 `9dd62e924ae88a07c49e180173469b70d90efad5235172fe0c4f33d27cd453eb`.
+
+
+## v1.4.8 global traffic bypass
+
+- [ ] On API 30–32 and API 33+, verify both options default off and save independently.
+      Rules apply to all profiles only after reconnecting; cancel/navigation and
+      rotation must not save edits. Save, restart the process and reconnect.
+- [ ] Download Iran and another country over the actual device network; verify
+      IPv4/IPv6 counts, offline reconnect, daily update throttling, failure/retry
+      and retention of the old snapshot. Large lists must report the route limit.
+- [ ] With country bypass enabled, compare direct egress and server-side captures
+      for known in-country and out-of-country destinations, including IPv6 where
+      negotiated. Confirm the VPN DNS path and per-app routing remain effective.
+- [ ] With only `.ir` enabled, use fresh standard UDP DNS and verify direct traffic
+      for a matching hostname while an unrelated hostname remains tunneled. Test
+      CNAME chains, mixed case, subdomains and `example.ir.evil.com` non-matching.
+- [ ] Test UDP/TCP, QUIC, IPv4/IPv6, shared hosting IPs and DNS TTL expiry. Encrypted
+      DNS, TCP DNS and cached answers must not be presented as matched domain rules.
+- [ ] While browsing, generate new matching DNS answers, rekey, switch Wi-Fi/mobile,
+      disconnect during a refresh and reconnect with another profile. Verify no old
+      answers, routes or file descriptors are reused across sessions. Confirm active
+      TCP connections, session timing and byte counters across route refreshes.
+- [ ] Simulate replacement failure: retain the existing TUN, display the route-refresh
+      error, retry and recover. Check expired rules after a failed refresh and reconnect.
+- [ ] Verify Android's Block connections without VPN behavior and recovery after
+      disabling it. Do not mark these device checks passed from JVM/native tests.
+
+Implementation validation covers suffix/CIDR parsing, randomized route subtraction,
+correlated and bounded DNS parsing, TTL/CNAME processing, draft/save/download-failure
+behavior, actual Builder route arguments, successful/failed TUN-update snapshots
+and native FD replacement/read guards. The build environment has no connected
+physical device. The maintainer explicitly authorized the native
+engine changes after the interface-rebuild risk was explained.
+
+The published Iran lists were retrieved separately through the web reader and
+parsed by the application's CIDR/route planner: 1747 IPv4 and 574 IPv6 prefixes,
+2321 native exclusions, or 12618 combined complementary routes (8187 IPv4 and
+4431 IPv6). This verifies the Android 13+ optimization's need; it is not evidence
+of Android HTTP downloading, actual TUN establishment or on-device egress.
+
+
+### v1.4.8 publication record — 2026-10-20
+
+The maintainer installed the production-signed bypass test APK, reported that it
+works correctly, and explicitly requested publication for an in-app update. That
+report is a successful device smoke test; the device/API level and individual
+checklist outcomes were not supplied, so it does not mark the full API 30–32 /
+API 33+ matrix or every routing/download scenario as passed. Publication proceeds
+with those documented validation limits and the maintainer's release request.
+
+Before versioning, local validation passed: 197 JVM tests, native traffic-counter
+and TUN-update checks, Android lint, debug and production-signed release builds.
+The test APK signature matches official v1.4.7. Version 1.4.8 increases versionCode
+from 13 to 14 and retains the production signing key. The release workflow repeats
+tests, lint, signed packaging, APK signature and checksum verification.
+
+Final local validation of 1.4.8 (14) also passed: 197 JVM tests (zero failures),
+native traffic-counter and TUN-update tests, Android lint and signed release build.
+The APK package/version and production signing certificate were verified, and
+the matching SHA-256 checksum was generated.

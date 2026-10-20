@@ -14,6 +14,7 @@ enum class AppScreen {
     PROFILES,
     DIAGNOSTICS,
     ABOUT,
+    TRAFFIC_BYPASS,
 }
 
 data class ImportedProfileUiInfo(

@@ -85,8 +85,8 @@ android {
         applicationId = "com.saeed.ikev2vpn"
         minSdk = 30
         targetSdk = 36
-        versionCode = 13
-        versionName = "1.4.7"
+        versionCode = 14
+        versionName = "1.4.8"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -168,6 +168,16 @@ val testNativeTraffic by tasks.registering(Exec::class) {
 
 tasks.configureEach {
     if (name == "testDebugUnitTest") dependsOn(testNativeTraffic)
+}
+
+val testNativeBypass by tasks.registering(Exec::class) {
+    group = "verification"
+    description = "Tests TUN replacement, failure retention and closed-session guards."
+    commandLine("bash", rootProject.file("scripts/test-native-bypass.sh").absolutePath)
+}
+
+tasks.configureEach {
+    if (name == "testDebugUnitTest") dependsOn(testNativeBypass)
 }
 
 val verifyReleaseSigning by tasks.registering {

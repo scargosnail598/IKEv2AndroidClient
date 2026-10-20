@@ -72,3 +72,15 @@ private fun AddPreview() {
 private fun PreviewSetup(state: VpnUiState) {
     SetupScreen(state, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {})
 }
+
+
+@Preview(name = "Traffic bypass · compact", widthDp = 320, heightDp = 640, fontScale = 1.3f, showBackground = true)
+@Composable
+private fun TrafficBypassPreview() {
+    PreviewFrame {
+        TrafficBypassScreen(com.saeed.ikev2vpn.bypass.BypassUiState(
+            config = com.saeed.ikev2vpn.bypass.BypassConfig(domainsEnabled = true, countriesEnabled = true),
+            suffixText = ".ir .co.uk", initialized = true, dirty = true,
+        ), null, {}, {}, {}, {}, {}, {}, {})
+    }
+}

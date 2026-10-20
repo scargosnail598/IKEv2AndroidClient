@@ -22,6 +22,7 @@
 #include "android_jni.h"
 #include "android_service.h"
 #include "android_traffic.h"
+#include "android_tun_update.h"
 #include "android_dns_proxy.h"
 #include "../charonservice.h"
 #include "../vpnservice_builder.h"
@@ -31,6 +32,7 @@
 #include <ipsec.h>
 #include <processing/jobs/callback_job.h>
 #include <threading/rwlock.h>
+#include <threading/mutex.h>
 #include <threading/thread.h>
 
 typedef struct private_android_service_t private_android_service_t;
@@ -84,6 +86,10 @@ struct private_android_service_t {
 	 * Whether to use the DNS proxy or not
 	 */
 	bool use_dns_proxy;
+	/* Serialize DNS route refreshes with rekeys and closing the interface. */
+	mutex_t *route_lock;
+	bool domain_bypass;
+	time_t bypass_last_tick;
 };
 
 CALLBACK(send_esp, void,
@@ -92,12 +98,50 @@ CALLBACK(send_esp, void,
 	charon->sender->send_no_marker(charon->sender, (packet_t*)packet);
 }
 
+/* Keep the current FD until Android has successfully established its replacement.
+ * No traffic counters, IKE/CHILD_SA state or session timers are reset here. */
+static void refresh_bypass_routes(private_android_service_t *this,
+								  ip_packet_t *packet, bool outbound)
+{
+	vpnservice_builder_t *builder;
+	int fd;
+	bool enabled;
+	chunk_t encoding = chunk_empty;
+
+	if (packet)
+	{
+		if (packet->get_next_header(packet) != IPPROTO_UDP ||
+			(packet->get_source(packet)->get_port(packet->get_source(packet)) != 53 &&
+			 packet->get_destination(packet)->get_port(packet->get_destination(packet)) != 53))
+		{ return; }
+		encoding = packet->get_encoding(packet);
+	}
+	this->route_lock->lock(this->route_lock);
+	this->lock->read_lock(this->lock);
+	enabled = this->domain_bypass && this->tunfd >= 0;
+	this->lock->unlock(this->lock);
+	if (enabled)
+	{
+		builder = charonservice->get_vpnservice_builder(charonservice);
+		fd = builder->process_bypass_dns(builder, encoding, outbound);
+		if (fd >= 0)
+		{
+			this->lock->write_lock(this->lock);
+			android_tun_replace(&this->tunfd, fd);
+			this->lock->unlock(this->lock);
+		}
+	}
+	this->route_lock->unlock(this->route_lock);
+}
+
 CALLBACK(deliver_plain, void,
 	private_android_service_t *this, ip_packet_t *packet)
 {
 	chunk_t encoding;
 	ssize_t len;
 
+	/* Install destination bypasses before the client sees the DNS answer. */
+	refresh_bypass_routes(this, packet, FALSE);
 	encoding = packet->get_encoding(packet);
 
 	this->lock->read_lock(this->lock);
@@ -147,6 +191,12 @@ static job_requeue_t handle_plain(private_android_service_t *this)
 		.tv_sec = 1,
 	};
 
+	/* Expire routes even on a busy tunnel, and without issuing new DNS queries. */
+	if (this->bypass_last_tick != time_monotonic(NULL))
+	{
+		this->bypass_last_tick = time_monotonic(NULL);
+		refresh_bypass_routes(this, NULL, FALSE);
+	}
 	FD_ZERO(&set);
 
 	this->lock->read_lock(this->lock);
@@ -180,10 +230,17 @@ static job_requeue_t handle_plain(private_android_service_t *this)
 	}
 
 	raw = chunk_alloc(this->mtu);
-	len = read(tunfd, raw.ptr, raw.len);
+	/* A route refresh may have replaced/closed the selected FD while select() ran.
+	 * Validate it and keep it alive under the read lock for the nonblocking read. */
+	this->lock->read_lock(this->lock);
+	len = android_tun_read_current(this->tunfd, tunfd, raw.ptr, raw.len);
+	this->lock->unlock(this->lock);
 	if (len < 0)
 	{
-		DBG1(DBG_DMN, "reading from TUN device failed: %s", strerror(errno));
+		if (errno != EAGAIN && errno != EWOULDBLOCK)
+		{
+			DBG1(DBG_DMN, "reading from TUN device failed: %s", strerror(errno));
+		}
 		chunk_free(&raw);
 		return JOB_REQUEUE_FAIR;
 	}
@@ -193,6 +250,7 @@ static job_requeue_t handle_plain(private_android_service_t *this)
 	packet = ip_packet_create(raw);
 	if (packet)
 	{
+		refresh_bypass_routes(this, packet, TRUE);
 		if (!dns_proxy || !this->dns_proxy->handle(this->dns_proxy, packet))
 		{
 			ipsec->processor->queue_outbound(ipsec->processor, packet);
@@ -299,7 +357,7 @@ static bool add_dns_servers(vpnservice_builder_t *builder, ike_sa_t *ike_sa)
  * listeners asynchronously.  To be sure every required bit of information is
  * available this should be called after the CHILD_SA has been established.
  */
-static bool setup_tun_device(private_android_service_t *this,
+static bool setup_tun_device_locked(private_android_service_t *this,
 							 ike_sa_t *ike_sa, child_sa_t *child_sa)
 {
 	vpnservice_builder_t *builder;
@@ -352,6 +410,7 @@ static bool setup_tun_device(private_android_service_t *this,
 		already_registered = true;
 	}
 	this->tunfd = tunfd;
+	this->domain_bypass = builder->domain_bypass_enabled(builder);
 	this->lock->unlock(this->lock);
 
 	DBG1(DBG_DMN, "successfully created TUN device");
@@ -370,10 +429,20 @@ static bool setup_tun_device(private_android_service_t *this,
 	return TRUE;
 }
 
+static bool setup_tun_device(private_android_service_t *this,
+							 ike_sa_t *ike_sa, child_sa_t *child_sa)
+{
+	bool success;
+	this->route_lock->lock(this->route_lock);
+	success = setup_tun_device_locked(this, ike_sa, child_sa);
+	this->route_lock->unlock(this->route_lock);
+	return success;
+}
+
 /**
  * Setup a new TUN device based on the existing one, but without DNS server.
  */
-static bool setup_tun_device_without_dns(private_android_service_t *this)
+static bool setup_tun_device_without_dns_locked(private_android_service_t *this)
 {
 	vpnservice_builder_t *builder;
 	int tunfd;
@@ -400,6 +469,15 @@ static bool setup_tun_device_without_dns(private_android_service_t *this)
 	return TRUE;
 }
 
+static bool setup_tun_device_without_dns(private_android_service_t *this)
+{
+	bool success;
+	this->route_lock->lock(this->route_lock);
+	success = setup_tun_device_without_dns_locked(this);
+	this->route_lock->unlock(this->route_lock);
+	return success;
+}
+
 /**
  * Close the current tun device
  */
@@ -407,15 +485,19 @@ static void close_tun_device(private_android_service_t *this)
 {
 	int tunfd;
 
+	this->route_lock->lock(this->route_lock);
 	this->lock->write_lock(this->lock);
 	if (this->tunfd < 0)
 	{	/* already closed (or never created) */
 		this->lock->unlock(this->lock);
+		this->route_lock->unlock(this->route_lock);
 		return;
 	}
 	tunfd = this->tunfd;
 	this->tunfd = -1;
 	this->lock->unlock(this->lock);
+	/* Release before unregistering callbacks to avoid lock inversion with a DNS callback. */
+	this->route_lock->unlock(this->route_lock);
 
 	this->dns_proxy->unregister_cb(this->dns_proxy, deliver_plain);
 	ipsec->processor->unregister_outbound(ipsec->processor, send_esp);
@@ -933,6 +1015,7 @@ METHOD(android_service_t, destroy, void,
 	/* make sure the tun device is actually closed */
 	close_tun_device(this);
 	this->dns_proxy->destroy(this->dns_proxy);
+	this->route_lock->destroy(this->route_lock);
 	this->lock->destroy(this->lock);
 	this->settings->destroy(this->settings);
 	free(this);
@@ -959,6 +1042,7 @@ android_service_t *android_service_create(android_creds_t *creds,
 			.destroy = _destroy,
 		},
 		.lock = rwlock_create(RWLOCK_TYPE_DEFAULT),
+		.route_lock = mutex_create(MUTEX_TYPE_DEFAULT),
 		.dns_proxy = android_dns_proxy_create(),
 		.settings = settings,
 		.creds = creds,

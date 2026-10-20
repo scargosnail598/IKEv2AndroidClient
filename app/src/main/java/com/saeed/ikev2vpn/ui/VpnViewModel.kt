@@ -707,6 +707,8 @@ class VpnViewModel(
         }
     }
 
+    fun showTrafficBypass() = leaveEditor(AppScreen.TRAFFIC_BYPASS)
+
     fun showAbout() {
         if (mutableUiState.value.isBusy) return
         clearImportedPassword()

@@ -244,6 +244,47 @@ METHOD(vpnservice_builder_t, establish_no_dns, int,
 	return establish_internal(this, "establishNoDns");
 }
 
+METHOD(vpnservice_builder_t, domain_bypass_enabled, bool,
+	private_vpnservice_builder_t *this)
+{
+	JNIEnv *env;
+	jmethodID method;
+	bool enabled = FALSE;
+	androidjni_attach_thread(&env);
+	method = (*env)->GetMethodID(env, android_charonvpnservice_builder_class,
+								"isDomainBypassEnabled", "()Z");
+	if (method) { enabled = (*env)->CallBooleanMethod(env, this->builder, method); }
+	if (androidjni_exception_occurred(env)) { enabled = FALSE; }
+	androidjni_detach_thread();
+	return enabled;
+}
+
+METHOD(vpnservice_builder_t, process_bypass_dns, int,
+	private_vpnservice_builder_t *this, chunk_t packet, bool outbound)
+{
+	JNIEnv *env;
+	jmethodID method;
+	jbyteArray bytes = NULL;
+	int fd = -1;
+	androidjni_attach_thread(&env);
+	method = (*env)->GetMethodID(env, android_charonvpnservice_builder_class,
+								"processBypassDns", "([BZ)I");
+	if (!method || packet.len > 65535) { goto done; }
+	if (packet.len)
+	{
+		bytes = (*env)->NewByteArray(env, packet.len);
+		if (!bytes) { goto done; }
+		(*env)->SetByteArrayRegion(env, bytes, 0, packet.len, (jbyte*)packet.ptr);
+		if ((*env)->ExceptionCheck(env)) { goto done; }
+	}
+	fd = (*env)->CallIntMethod(env, this->builder, method, bytes, outbound);
+ done:
+	if (androidjni_exception_occurred(env)) { fd = -1; }
+	if (bytes) { (*env)->DeleteLocalRef(env, bytes); }
+	androidjni_detach_thread();
+	return fd;
+}
+
 METHOD(vpnservice_builder_t, destroy, void,
 	private_vpnservice_builder_t *this)
 {
@@ -268,6 +309,8 @@ vpnservice_builder_t *vpnservice_builder_create(jobject builder)
 			.set_mtu = _set_mtu,
 			.establish = _establish,
 			.establish_no_dns = _establish_no_dns,
+			.process_bypass_dns = _process_bypass_dns,
+			.domain_bypass_enabled = _domain_bypass_enabled,
 			.destroy = _destroy,
 		},
 	);

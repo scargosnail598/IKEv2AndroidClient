@@ -25,6 +25,7 @@ fun MainScreen(
     darkMode: Boolean, onDarkModeChanged: (Boolean) -> Unit, onDismissError: () -> Unit,
     onAbout: () -> Unit = {}, onCheckUpdates: () -> Unit = {},
     onNotificationSettings: () -> Unit = {},
+    onTrafficBypass: () -> Unit = {},
     serverPing: ServerPingReading = ServerPingReading.Inactive,
     onRefreshPing: () -> Unit = {},
 ) {
@@ -49,6 +50,8 @@ fun MainScreen(
                     DropdownMenuItem(text = { Text(if (darkMode) "Light appearance" else "Dark appearance") },
                         leadingIcon = { Icon(VpnIcons.Moon, null) },
                         onClick = { menuOpen = false; onDarkModeChanged(!darkMode) })
+                    DropdownMenuItem(text = { Text("Traffic bypass") }, leadingIcon = { Icon(VpnIcons.Link, null) },
+                        onClick = { menuOpen = false; onTrafficBypass() })
                     DropdownMenuItem(text = { Text("Notifications") }, leadingIcon = { Icon(VpnIcons.Bell, null) },
                         onClick = { menuOpen = false; onNotificationSettings() })
                     DropdownMenuItem(text = { Text("Check for updates") }, leadingIcon = { Icon(VpnIcons.Download, null) },

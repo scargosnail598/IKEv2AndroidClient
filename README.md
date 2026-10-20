@@ -5,7 +5,7 @@ and the strongSwan userland VPN engine.
 
 ## Status and version
 
-The current application version is **1.4.7** (`versionCode = 13`). The Gradle
+The current application version is **1.4.8** (`versionCode = 14`). The Gradle
 configuration in `app/build.gradle.kts` is the version source of truth.
 
 The repository is maintained as an independent Android project. Release-device
@@ -60,12 +60,13 @@ the pinned Gradle 9.5 wrapper.
 - Sanitized diagnostics
 - Persistent light/dark theme selection
 - Per-profile app routing: all apps, only selected apps, or selected apps bypass VPN
+- Global traffic bypass by domain suffix and country IP ranges, with independent switches
 
 ## Current limitations
 
 The app does not currently support IPv6 literals,
-SOCKS5 Proxy Mode, custom DNS or
-routing, Quick Settings, or auto-connect UI.
+SOCKS5 Proxy Mode, custom DNS servers or manually entered routes,
+Quick Settings, or auto-connect UI.
 
 Connection state and protocol logs come from the strongSwan service and its
 `charon.log`; Android's built-in IKEv2 stack is not used.
@@ -389,15 +390,15 @@ read -rsp "Key password: " ANDROID_KEY_PASSWORD; export ANDROID_KEY_PASSWORD; pr
 An explicit release task fails when any signing value is missing. Debug builds,
 tests, and lint do not read or require signing credentials.
 
-After completing [RELEASE_TESTING.md](RELEASE_TESTING.md), build v1.4.7 with:
+After completing [RELEASE_TESTING.md](RELEASE_TESTING.md), build v1.4.8 with:
 
 ```bash
 ./gradlew --no-daemon --no-configuration-cache clean assembleRelease
 mkdir -p dist
-cp app/build/outputs/apk/release/app-release.apk dist/ikev2-android-v1.4.7.apk
-apksigner verify --verbose --print-certs dist/ikev2-android-v1.4.7.apk
-(cd dist && sha256sum ikev2-android-v1.4.7.apk > ikev2-android-v1.4.7.apk.sha256)
-(cd dist && sha256sum -c ikev2-android-v1.4.7.apk.sha256)
+cp app/build/outputs/apk/release/app-release.apk dist/ikev2-android-v1.4.8.apk
+apksigner verify --verbose --print-certs dist/ikev2-android-v1.4.8.apk
+(cd dist && sha256sum ikev2-android-v1.4.8.apk > ikev2-android-v1.4.8.apk.sha256)
+(cd dist && sha256sum -c ikev2-android-v1.4.8.apk.sha256)
 unset ANDROID_KEYSTORE_PATH ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD
 ```
 
@@ -409,7 +410,7 @@ for every update.
 
 `dist/` is ignored. After the signed release candidate passes the manual device
 checklist, run **Tag Android Release** from the Actions tab on `main`, enter
-`1.4.7`, and confirm device validation. The workflow checks that the requested
+`1.4.8`, and confirm device validation. The workflow checks that the requested
 version matches Gradle, runs unsigned CI validation, creates the annotated tag,
 and starts **Android Release** to build and publish the signed APK and checksum.
 The Android Release workflow can also be started manually for an existing tag.
@@ -485,3 +486,64 @@ packages without launcher activities. App inventory is read locally and is not
 transmitted. Distribution through Google Play requires review of its
 [package visibility permission policy](https://support.google.com/googleplay/android-developer/answer/10158779)
 and the applicable permission declaration.
+
+
+## Global traffic bypass
+
+Open **Connection → More → Traffic bypass**. Rules are device-wide and independent
+of per-profile app selection. Edit the rules and select **Save bypass rules**;
+reconnect to apply the new snapshot to all profiles. Existing sessions keep their
+previous settings. Global rules stay on the source device and are not included
+in configuration links, QR codes or portable profiles.
+
+- **Domain suffixes:** enable this option and enter `.ir`, `.ru`, `.co.uk` or other
+  suffixes, separated by spaces or commas. Names match at DNS label boundaries,
+  including subdomains; `example.ir.evil.com` does not match `.ir`. International
+  suffixes are normalized with IDN. Only observed, complete UDP DNS queries and
+  their corresponding A/AAAA answers are used. CNAME chains are followed, and
+  unrelated additional answers cannot create bypass routes.
+- **Country IP ranges:** enable this option, add countries, then save. The app
+  downloads aggregated IPv4 and IPv6 lists from [IPdeny](https://www.ipdeny.com/ipblocks/)
+  over HTTPS on explicit Add/Update actions. One update per selected country per
+  day is allowed. Downloaded lists and timestamps are stored atomically and work
+  offline; a failed download retains the old list. Missing IPv4/IPv6 datasets show
+  zero ranges for that family. These lists describe IP allocations, not guaranteed
+  physical server location. Downloads use the regular network available to this app.
+
+Domain rules require ordinary UDP DNS visible to the VPN. Android Private DNS,
+DNS over HTTPS/TLS, DNS over TCP, fragmented DNS, cached resolutions and apps
+with their own resolvers may prevent matching; those destinations continue to
+follow their IP routes. Reopen apps after reconnecting. Routing is ultimately by
+IP: other domains sharing a learned address can bypass too. Only public unicast
+answers are learned. The cache holds at most 128 learned IPs and 512 outstanding
+queries per connection; new addresses above capacity stay in the VPN and a
+message is displayed in Traffic bypass.
+
+Learned routes normally expire with DNS TTL, capped at ten minutes, with cleanup
+about once per second. Interface replacements are serialized with rekeys and
+shutdown. A failed rebuild keeps the existing interface and last applied routes;
+this can temporarily retain an expired bypass until a retry succeeds. The error
+appears in Traffic bypass; reconnect to clear old learned routes. Session timing,
+IKE state and native byte counters are not reset by a routing refresh. The bypass component does not persist DNS payloads, queried hostnames or the
+learned-route cache, and reports generic errors without including that data.
+The VPN engine's existing diagnostics can still contain network/IP metadata.
+
+Android 13+ uses native exclusion routes to avoid expanding IPv6 ranges into
+large complementary tables. Android 11–12 uses complementary inclusion routes;
+large country lists or IPv6 combinations can exceed its route budget and prevent
+connection. Use fewer countries on those devices. The actual route table is
+capped at 8192 routes across address families; lists whose normalized exclusions
+alone exceed that budget are rejected before saving. Up to 16 country lists and
+50,000 downloaded prefixes can be stored. Negotiated DNS servers retain their
+existing VPN path. Android **Block connections without VPN** blocks bypassed
+traffic, so disable that system option if direct connections are intended.
+
+The current Iran lists were parsed separately during implementation (1747 IPv4
+and 574 IPv6 ranges): native exclusions use 2321 entries, versus 12618 routes
+for the combined legacy complement. This is a dated source snapshot, not a
+promise that future lists retain the same size.
+
+Country download availability and physical-device routing still need device
+validation; see [RELEASE_TESTING.md](RELEASE_TESTING.md). In this environment,
+direct HTTPS access to IPdeny timed out; its published source URLs were verified
+with browsing, but the Android downloader has not been exercised on a device.

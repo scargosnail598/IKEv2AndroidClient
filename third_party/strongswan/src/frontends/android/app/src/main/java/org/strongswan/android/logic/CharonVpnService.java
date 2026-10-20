@@ -53,6 +53,11 @@ import org.strongswan.android.logic.VpnStateService.State;
 import org.strongswan.android.logic.imc.ImcState;
 import org.strongswan.android.logic.imc.RemediationInstruction;
 import com.saeed.ikev2vpn.MainActivity;
+import com.saeed.ikev2vpn.bypass.BypassConfig;
+import com.saeed.ikev2vpn.bypass.BypassTunUpdater;
+import com.saeed.ikev2vpn.bypass.BypassStore;
+import com.saeed.ikev2vpn.bypass.BypassRuntime;
+import com.saeed.ikev2vpn.bypass.TunnelBypass;
 import com.saeed.ikev2vpn.notifications.VpnNotificationActionReceiver;
 import org.strongswan.android.ui.VpnProfileControlActivity;
 import org.strongswan.android.utils.Constants;
@@ -372,6 +377,7 @@ public class CharonVpnService extends VpnService implements Runnable, VpnStateSe
 				{	/* only do this if we are not connecting to another profile */
 					removeNotification();
 					mBuilderAdapter.closeBlocking();
+					mBuilderAdapter.clearBypassSession();
 				}
 			}
 		}
@@ -828,13 +834,19 @@ public class CharonVpnService extends VpnService implements Runnable, VpnStateSe
 		private VpnService.Builder mBuilder;
 		private BuilderCache mCache;
 		private BuilderCache mEstablishedCache;
+		private TunnelBypass mBypass;
+		private BypassTunUpdater mBypassUpdater;
 		private final PacketDropper mDropper = new PacketDropper();
 
 		public synchronized void setProfile(VpnProfile profile)
 		{
 			mProfile = profile;
+			BypassRuntime.clear();
+			mBypass = new TunnelBypass(BypassStore.loadForTunnel(getApplicationContext()));
+			mBypassUpdater = new BypassTunUpdater(mBypass);
+			mEstablishedCache = null;
 			mBuilder = createBuilder(mProfile.getName());
-			mCache = new BuilderCache(mProfile);
+			mCache = new BuilderCache(mProfile, mBypass);
 		}
 
 		private VpnService.Builder createBuilder(String name)
@@ -941,7 +953,7 @@ public class CharonVpnService extends VpnService implements Runnable, VpnStateSe
 			}
 			catch (Exception ex)
 			{
-				ex.printStackTrace();
+				Log.e(TAG, "Failed to establish VPN interface");
 				return null;
 			}
 			if (fd == null)
@@ -952,7 +964,8 @@ public class CharonVpnService extends VpnService implements Runnable, VpnStateSe
 			 * builder anymore, but we might need another when reestablishing */
 			mBuilder = createBuilder(mProfile.getName());
 			mEstablishedCache = mCache;
-			mCache = new BuilderCache(mProfile);
+			mBypassUpdater.markEstablished();
+			mCache = new BuilderCache(mProfile, mBypass);
 			return fd;
 		}
 
@@ -986,6 +999,32 @@ public class CharonVpnService extends VpnService implements Runnable, VpnStateSe
 			mDropper.stop();
 		}
 
+		public synchronized void clearBypassSession()
+		{
+			if (mBypass != null) { mBypass.clear(); }
+			mBypass = null;
+			mBypassUpdater = null;
+			mEstablishedCache = null;
+			BypassRuntime.clear();
+		}
+
+		public synchronized boolean isDomainBypassEnabled()
+		{
+			return mBypass != null && mBypass.isDomainEnabled();
+		}
+
+		/** Native engine serializes TUN replacement and delivers DNS answers only after this returns. */
+		public synchronized int processBypassDns(byte[] packet, boolean outbound)
+		{
+			if (!isDomainBypassEnabled() || mEstablishedCache == null) { return -1; }
+			return mBypassUpdater.process(packet, outbound, () -> {
+				Builder builder = createBuilder(mProfile.getName());
+				mEstablishedCache.applyData(builder);
+				ParcelFileDescriptor fd = builder.establish();
+				return fd != null ? fd.detachFd() : -1;
+			});
+		}
+
 		public synchronized int establishNoDns()
 		{
 			ParcelFileDescriptor fd;
@@ -1002,7 +1041,7 @@ public class CharonVpnService extends VpnService implements Runnable, VpnStateSe
 			}
 			catch (Exception ex)
 			{
-				ex.printStackTrace();
+				Log.e(TAG, "Failed to establish VPN interface");
 				return -1;
 			}
 			if (fd == null)
@@ -1108,6 +1147,7 @@ public class CharonVpnService extends VpnService implements Runnable, VpnStateSe
 		private final IPRangeSet mIncludedSubnetsv4 = new IPRangeSet();
 		private final IPRangeSet mIncludedSubnetsv6 = new IPRangeSet();
 		private final IPRangeSet mExcludedSubnets;
+		private final TunnelBypass mBypass;
 		private final int mSplitTunneling;
 		private final SelectedAppsHandling mAppHandling;
 		private final SortedSet<String> mSelectedApps;
@@ -1118,6 +1158,12 @@ public class CharonVpnService extends VpnService implements Runnable, VpnStateSe
 
 		public BuilderCache(VpnProfile profile)
 		{
+			this(profile, new TunnelBypass(new BypassConfig()));
+		}
+
+		public BuilderCache(VpnProfile profile, TunnelBypass bypass)
+		{
+			mBypass = bypass;
 			IPRangeSet included = IPRangeSet.fromString(profile.getIncludedSubnets());
 			for (IPRange range : included)
 			{
@@ -1261,6 +1307,7 @@ public class CharonVpnService extends VpnService implements Runnable, VpnStateSe
 
 		public void applyData(Builder builder)
 		{
+			int routeCount = 0;
 			for (IPRange address : mAddresses)
 			{
 				builder.addAddress(address.getFrom(), address.getPrefix());
@@ -1285,21 +1332,7 @@ public class CharonVpnService extends VpnService implements Runnable, VpnStateSe
 						ranges.addAll(mRoutesIPv4);
 					}
 					ranges.remove(mExcludedSubnets);
-					for (IPRange subnet : ranges.subnets())
-					{
-						try
-						{
-							builder.addRoute(subnet.getFrom(), subnet.getPrefix());
-						}
-						catch (IllegalArgumentException e)
-						{	/* some Android versions don't seem to like multicast addresses here,
-							 * ignore it for now */
-							if (!subnet.getFrom().isMulticastAddress())
-							{
-								throw e;
-							}
-						}
-					}
+					routeCount = mBypass.applyRoutes(builder, ranges.subnets(), mDnsServers, routeCount);
 				}
 				else
 				{	/* allow traffic that would otherwise be blocked to bypass the VPN */
@@ -1326,20 +1359,7 @@ public class CharonVpnService extends VpnService implements Runnable, VpnStateSe
 						ranges.addAll(mRoutesIPv6);
 					}
 					ranges.remove(mExcludedSubnets);
-					for (IPRange subnet : ranges.subnets())
-					{
-						try
-						{
-							builder.addRoute(subnet.getFrom(), subnet.getPrefix());
-						}
-						catch (IllegalArgumentException e)
-						{
-							if (!subnet.getFrom().isMulticastAddress())
-							{
-								throw e;
-							}
-						}
-					}
+					routeCount = mBypass.applyRoutes(builder, ranges.subnets(), mDnsServers, routeCount);
 				}
 				else
 				{

@@ -11,6 +11,13 @@ Android application version.
 - Normalized the extracted Android project for standalone development and CI.
 - Expanded repository hygiene, release, testing, and security documentation.
 
+## [1.4.8]
+
+### Added
+
+- Device-wide traffic bypass with separate domain-suffix and country-IP options,
+  explicit country-list downloads and expiring DNS-derived bypass routes.
+
 ## [1.4.7]
 
 ### Changed

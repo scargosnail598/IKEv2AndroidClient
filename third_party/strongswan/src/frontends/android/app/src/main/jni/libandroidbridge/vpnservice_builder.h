@@ -85,6 +85,10 @@ struct vpnservice_builder_t {
 	 */
 	int (*establish_no_dns)(vpnservice_builder_t *this);
 
+	/** DNS-based routing: NULL/empty packet expires old entries. New FD or -1 (unchanged/failed). */
+	int (*process_bypass_dns)(vpnservice_builder_t *this, chunk_t packet, bool outbound);
+	bool (*domain_bypass_enabled)(vpnservice_builder_t *this);
+
 	/**
 	 * Destroy a vpnservice_builder
 	 */

@@ -170,6 +170,7 @@ fun VpnApp(
                     onDarkModeChanged = onDarkModeChanged, onDismissError = viewModel::dismissError,
                     onAbout = viewModel::showAbout,
                     onNotificationSettings = onNotificationSettings,
+                    onTrafficBypass = viewModel::showTrafficBypass,
                     serverPing = serverPing, onRefreshPing = viewModel::refreshServerPing,
                     onCheckUpdates = { viewModel.showAbout(); updateViewModel.check() },
                 )
@@ -178,6 +179,7 @@ fun VpnApp(
                     viewModel::renameProfile, viewModel::deleteProfile, viewModel::dismissError,
                     onShare = { shareProfile = it },
                 )
+                AppScreen.TRAFFIC_BYPASS -> TrafficBypassRoute(viewModel::showMain)
                 AppScreen.ABOUT -> AboutScreen(updateState, viewModel::showMain,
                     updateViewModel::check, updateViewModel::download, updateViewModel::cancelDownload,
                     updateViewModel::install, updateViewModel::dismissError)
